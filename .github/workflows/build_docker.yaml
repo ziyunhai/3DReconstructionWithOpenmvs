@@ -10,7 +10,7 @@ on:
   workflow_dispatch:  # 允许手动触发
   
 jobs:
-  build-odm:
+  build-3d:
     runs-on: ubuntu-latest
     strategy:
       matrix:
@@ -21,7 +21,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: ziyunhai/3DReconstructionWithOpenmvs  
-          ref: master  # 使用master分支，可以指定特定tag如v3.2.0
+          ref: main  # 使用master分支，可以指定特定tag如v3.2.0
       
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
