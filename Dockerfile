@@ -17,7 +17,8 @@ RUN apt-get update && apt-get install -y \
     libboost-all-dev \
     libeigen3-dev \
     libflann-dev \
-    libfreeimage-dev \
+    libopenimageio-dev \
+    openimageio-tools \
     libmetis-dev \
     libsqlite3-dev \
     libglew-dev \
