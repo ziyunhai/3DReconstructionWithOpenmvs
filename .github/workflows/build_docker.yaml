@@ -41,7 +41,7 @@ jobs:
           platforms: linux/amd64  # 指定架构，也可以添加linux/arm64
           push: true
           tags: |
-            ${{ secrets.ACR_REGISTRY }}/${{ secrets.ACR_NAMESPACE }}/3DReconstructionWithOpenmvs:${{ matrix.tag }}
+            ${{ secrets.ACR_REGISTRY }}/${{ secrets.ACR_NAMESPACE }}/colmap-openmvs-3dreconstruction:${{ matrix.tag }}
           cache-from: type=gha  # 使用GitHub Actions缓存加速构建
           cache-to: type=gha,mode=max
       
