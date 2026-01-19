@@ -43,8 +43,7 @@ RUN apt-get update && \
         libmpfr-dev \
         zlib1g-dev \
         python3-dev \
-        libnanoflann-dev \
-        libjxl-dev && \
+        libnanoflann-dev && \
     rm -rf /var/lib/apt/lists/*
 
 # Fix potential issue with OpenImageIO's OpenCV dependency
@@ -87,16 +86,17 @@ RUN git clone https://github.com/CGAL/cgal.git --branch=v6.0.1 && \
     make -j$(nproc) && make install && \
     cd .. && rm -rf cgal_build cgal
 
-# Build and install OpenMVS
+# Build and install OpenMVS (with JPEG XL support disabled)
 RUN git clone https://github.com/cdcseacave/openMVS.git && \
     git clone https://github.com/cdcseacave/VCG.git vcglib && \
     mkdir openMVS_build && \
     cd openMVS_build && \
-    # Note: OpenMVS_USE_CUDA is OFF. Set CMAKE_PREFIX_PATH to find manually installed Eigen/CGAL
+    # Note: OpenMVS_USE_CUDA is OFF, OpenMVS_USE_JPEGXL is OFF. Set CMAKE_PREFIX_PATH to find manually installed Eigen/CGAL
     cmake ../openMVS \
         -DCMAKE_BUILD_TYPE=Release \
         -DVCG_ROOT=/vcglib \
         -DOpenMVS_USE_CUDA=OFF \
+        -DOpenMVS_USE_JPEGXL=OFF \
         -DCMAKE_INSTALL_PREFIX=/usr/local \
         -DCMAKE_PREFIX_PATH="/usr/local;/usr" && \
     make -j$(nproc) && make install && \
