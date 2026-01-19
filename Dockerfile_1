@@ -109,6 +109,7 @@ FROM ubuntu:24.04 AS runtime
 ARG DEBIAN_FRONTEND=noninteractive
 
 # Install minimal runtime dependencies required by both COLMAP and OpenMVS
+# Corrected package names for Ubuntu 24.04
 RUN apt-get update && \
     apt-get install -y --no-install-recommends --no-install-suggests \
         # COLMAP runtime dependencies
@@ -133,19 +134,17 @@ RUN apt-get update && \
         libmkl-intel-lp64 \
         libmkl-intel-thread \
         libmkl-core \
-        # OpenMVS runtime dependencies
+        # OpenMVS runtime dependencies (corrected names)
         libpng16-16 \
         libjpeg-turbo8 \
         libtiff6 \
         libglu1-mesa \
-        libglfw3-0 \
+        libglfw3 \ # Changed from libglfw3-0
         libboost-iostreams1.83.0 \
         libboost-program-options1.83.0 \
         libboost-system1.83.0 \
-        libopencv-imgcodecs4.8t64 \
-        libopencv-imgproc4.8t64 \
-        libopencv-videoio4.8t64 \
-        libopencv-core4.8t64 \
+        libopencv-imgcodecs-dev \ # Changed from version-specific runtime package
+        # libopencv-imgproc-dev, libopencv-videoio-dev, libopencv-core-dev are pulled in by libopencv-imgcodecs-dev
         libboost-serialization1.83.0 \
         libboost-thread1.83.0 \
         libgmp10 \
