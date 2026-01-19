@@ -79,11 +79,12 @@ RUN git clone https://github.com/colmap/colmap.git && \
     git checkout FETCH_HEAD && \
     mkdir build && \
     cd build && \
+    # Note: BUILD_CUDA_TOOLS is OFF, BLA_VENDOR is Intel10_64lp
     cmake .. \
         -GNinja \
         -DCMAKE_BUILD_TYPE=Release \
         -DCMAKE_INSTALL_PREFIX=/colmap-install \
-        -DBUILD_CUDA_TOOLS=OFF \ # Explicitly disable CUDA for COLMAP
+        -DBUILD_CUDA_TOOLS=OFF \
         -DBLA_VENDOR=Intel10_64lp && \
     ninja install
 
@@ -92,10 +93,11 @@ RUN git clone https://github.com/cdcseacave/openMVS.git && \
     git clone https://github.com/cdcseacave/VCG.git vcglib && \
     mkdir openMVS_build && \
     cd openMVS_build && \
+    # Note: OpenMVS_USE_CUDA is OFF
     cmake ../openMVS \
         -DCMAKE_BUILD_TYPE=Release \
         -DVCG_ROOT=/vcglib \
-        -DOpenMVS_USE_CUDA=OFF \ # Disable CUDA for OpenMVS
+        -DOpenMVS_USE_CUDA=OFF \
         -DCMAKE_INSTALL_PREFIX=/usr/local && \
     make -j$(nproc) && make install && \
     cd .. && rm -rf openMVS_build vcglib
