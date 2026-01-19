@@ -3,9 +3,6 @@ FROM ubuntu:24.04 AS builder
 
 ARG DEBIAN_FRONTEND=noninteractive
 
-# Install common build tools and dependencies for both COLMAP and OpenMVS
-# Install system Eigen and Ceres first to ensure COLMAP uses compatible versions
-# Also add nanoflann which is required by OpenMVS
 RUN apt-get update && \
     apt-get install -y \
         git \
@@ -46,7 +43,8 @@ RUN apt-get update && \
         libmpfr-dev \
         zlib1g-dev \
         python3-dev \
-        libnanoflann-dev && \
+        libnanoflann-dev \
+        libjxl-dev && \
     rm -rf /var/lib/apt/lists/*
 
 # Fix potential issue with OpenImageIO's OpenCV dependency
@@ -110,9 +108,6 @@ FROM ubuntu:24.04 AS runtime
 
 ARG DEBIAN_FRONTEND=noninteractive
 
-# Install minimal runtime dependencies required by both COLMAP and OpenMVS
-# Updated package names for Ubuntu 24.04: libglfw3, libopencv-imgcodecs-dev
-# Removed libnanoflann1t64 as it was not found; relying on libnanoflann-dev from builder stage
 RUN apt-get update && \
     apt-get install -y --no-install-recommends --no-install-suggests \
         libboost-program-options1.83.0 \
