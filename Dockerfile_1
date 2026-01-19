@@ -1,31 +1,19 @@
-# Dockerfile with COLMAP and OpenMVS (CPU-only version)
-# Multi-stage build to keep image size reasonable
+# --- Builder Stage ---
+FROM ubuntu:24.04 AS builder
 
-# Stage 1: Builder stage for both COLMAP and OpenMVS
-ARG UBUNTU_VERSION=24.04
-ARG COLMAP_GIT_COMMIT=main
-ARG OPENMVS_BRANCH=develop
+ARG DEBIAN_FRONTEND=noninteractive
 
-FROM ubuntu:${UBUNTU_VERSION} AS builder
-
-ENV DEBIAN_FRONTEND=noninteractive
-ENV QT_XCB_GL_INTEGRATION=xcb_egl
-
-# Update apt sources and install dependencies
+# Install common build tools and dependencies for both COLMAP and OpenMVS
 RUN apt-get update && \
     apt-get install -y \
         git \
         cmake \
         ninja-build \
         build-essential \
-        wget \
-        unzip \
+        # COLMAP dependencies
         libboost-program-options-dev \
         libboost-graph-dev \
         libboost-system-dev \
-        libboost-iostreams-dev \
-        libboost-serialization-dev \
-        libboost-thread-dev \
         libeigen3-dev \
         libopenimageio-dev \
         openimageio-tools \
@@ -35,8 +23,6 @@ RUN apt-get update && \
         libgmock-dev \
         libsqlite3-dev \
         libglew-dev \
-        libglu1-mesa-dev \
-        libglfw3-dev \
         qt6-base-dev \
         libqt6opengl6-dev \
         libqt6openglwidgets6 \
@@ -44,24 +30,52 @@ RUN apt-get update && \
         libceres-dev \
         libcurl4-openssl-dev \
         libssl-dev \
+        libmkl-full-dev \
+        # OpenMVS dependencies
         libpng-dev \
         libjpeg-dev \
         libtiff-dev \
+        libglu1-mesa-dev \
+        libglew-dev \
+        libglfw3-dev \
+        libboost-iostreams-dev \
+        libboost-serialization-dev \
         libopencv-dev \
+        libboost-thread-dev \
         libgmp-dev \
         libmpfr-dev \
         zlib1g-dev \
-        python3-dev \
-        pkg-config && \
+        python3-dev && \
     rm -rf /var/lib/apt/lists/*
 
-# Fix issue in Ubuntu's openimageio CMake config
+# Fix potential issue with OpenImageIO's OpenCV dependency
 RUN mkdir -p /usr/include/opencv4
 
-# Build and install COLMAP (CPU version)
+# Build and install Eigen (required by OpenMVS)
+RUN git clone https://gitlab.com/libeigen/eigen.git --branch 3.4 && \
+    mkdir eigen_build && \
+    cd eigen_build && \
+    cmake ../eigen \
+        -DCMAKE_BUILD_TYPE=Release \
+        -DCMAKE_INSTALL_PREFIX=/usr/local && \
+    make -j$(nproc) && make install && \
+    cd .. && rm -rf eigen_build eigen
+
+# Build and install CGAL (required by OpenMVS)
+RUN git clone https://github.com/CGAL/cgal.git --branch=v6.0.1 && \
+    mkdir cgal_build && \
+    cd cgal_build && \
+    cmake ../cgal \
+        -DCMAKE_BUILD_TYPE=Release \
+        -DCMAKE_INSTALL_PREFIX=/usr/local && \
+    make -j$(nproc) && make install && \
+    cd .. && rm -rf cgal_build cgal
+
+# Build and install COLMAP
+ARG COLMAP_GIT_COMMIT=main
 RUN git clone https://github.com/colmap/colmap.git && \
     cd colmap && \
-    git fetch origin ${COLMAP_GIT_COMMIT} && \
+    git fetch https://github.com/colmap/colmap.git ${COLMAP_GIT_COMMIT} && \
     git checkout FETCH_HEAD && \
     mkdir build && \
     cd build && \
@@ -69,62 +83,34 @@ RUN git clone https://github.com/colmap/colmap.git && \
         -GNinja \
         -DCMAKE_BUILD_TYPE=Release \
         -DCMAKE_INSTALL_PREFIX=/colmap-install \
-        -DCUDA_ENABLED=OFF \
-        -DBLA_VENDOR=OpenBLAS && \
-    ninja install && \
-    cd / && rm -rf colmap
+        -DBUILD_CUDA_TOOLS=OFF \ # Explicitly disable CUDA for COLMAP
+        -DBLA_VENDOR=Intel10_64lp && \
+    ninja install
 
-# Build and install Eigen (for OpenMVS)
-RUN git clone https://gitlab.com/libeigen/eigen.git --branch 3.4 && \
-    mkdir eigen_build && \
-    cd eigen_build && \
-    cmake ../eigen && \
-    make -j$(nproc) && \
-    make install && \
-    ldconfig && \
-    cd / && rm -rf eigen_build eigen
-
-# Build and install CGAL
-RUN git clone https://github.com/CGAL/cgal.git --branch v6.0.1 && \
-    mkdir cgal_build && \
-    cd cgal_build && \
-    cmake -DCMAKE_BUILD_TYPE=Release ../cgal && \
-    make -j$(nproc) && \
-    make install && \
-    ldconfig && \
-    cd / && rm -rf cgal_build cgal
-
-# Clone VCG library for OpenMVS
-RUN git clone https://github.com/cdcseacave/VCG.git /vcglib
-
-# Clone and build OpenMVS (CPU version)
-RUN git clone https://github.com/cdcseacave/openMVS.git --branch ${OPENMVS_BRANCH} && \
+# Build and install OpenMVS
+RUN git clone https://github.com/cdcseacave/openMVS.git && \
+    git clone https://github.com/cdcseacave/VCG.git vcglib && \
     mkdir openMVS_build && \
     cd openMVS_build && \
     cmake ../openMVS \
         -DCMAKE_BUILD_TYPE=Release \
         -DVCG_ROOT=/vcglib \
-        -DCMAKE_INSTALL_PREFIX=/openmvs-install \
-        -DOpenMVS_USE_CUDA=OFF && \
-    make -j$(nproc) && \
-    make install && \
-    ldconfig && \
-    cd / && rm -rf openMVS_build vcglib openMVS
+        -DOpenMVS_USE_CUDA=OFF \ # Disable CUDA for OpenMVS
+        -DCMAKE_INSTALL_PREFIX=/usr/local && \
+    make -j$(nproc) && make install && \
+    cd .. && rm -rf openMVS_build vcglib
 
-# Stage 2: Runtime stage
-FROM ubuntu:${UBUNTU_VERSION} AS runtime
 
-ENV DEBIAN_FRONTEND=noninteractive
+# --- Runtime Stage ---
+FROM ubuntu:24.04 AS runtime
 
-# Update apt sources and install runtime dependencies for both COLMAP and OpenMVS (CPU version)
+ARG DEBIAN_FRONTEND=noninteractive
+
+# Install minimal runtime dependencies required by both COLMAP and OpenMVS
 RUN apt-get update && \
     apt-get install -y --no-install-recommends --no-install-suggests \
+        # COLMAP runtime dependencies
         libboost-program-options1.83.0 \
-        libboost-system1.83.0 \
-        libboost-iostreams1.83.0 \
-        libboost-serialization1.83.0 \
-        libboost-graph1.83.0 \
-        libboost-thread1.83.0 \
         libc6 \
         libomp5 \
         libopengl0 \
@@ -141,48 +127,44 @@ RUN apt-get update && \
         libqt6openglwidgets6 \
         libcurl4 \
         libssl3t64 \
+        libmkl-locale \
+        libmkl-intel-lp64 \
+        libmkl-intel-thread \
+        libmkl-core \
+        # OpenMVS runtime dependencies
         libpng16-16 \
         libjpeg-turbo8 \
         libtiff6 \
-        libopencv-dev \
+        libglu1-mesa \
+        libglfw3-0 \
+        libboost-iostreams1.83.0 \
+        libboost-program-options1.83.0 \
+        libboost-system1.83.0 \
+        libopencv-imgcodecs4.8t64 \
+        libopencv-imgproc4.8t64 \
+        libopencv-videoio4.8t64 \
+        libopencv-core4.8t64 \
+        libboost-serialization1.83.0 \
+        libboost-thread1.83.0 \
         libgmp10 \
         libmpfr6 \
         zlib1g \
-        python3 \
-        libglu1-mesa \
-        libglfw3 \
-        libblas3 \
-        liblapack3 \
-        libopenblas0 && \
+        # Basic utilities (optional but often useful)
+        ca-certificates && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/*
 
-# Copy COLMAP installation
+# Copy installed libraries and executables from builder stage
+COPY --from=builder /usr/local/lib /usr/local/lib
+COPY --from=builder /usr/local/bin /usr/local/bin
+# Copy COLMAP installation from builder stage
 COPY --from=builder /colmap-install/ /usr/local/
 
-# Copy OpenMVS installation
-COPY --from=builder /openmvs-install/ /usr/local/
+# Update the dynamic linker cache to recognize new libraries
+RUN ldconfig
 
-# Create a non-root user for running the applications
-RUN groupadd -r -g 1000 appuser && \
-    useradd -r -u 1000 -g appuser -m -s /bin/bash appuser && \
-    mkdir -p /workspace && \
-    chown -R appuser:appuser /workspace
-
-# Set working directory
+# Set the working directory
 WORKDIR /workspace
 
-# Switch to non-root user
-USER appuser
-
-# Set environment variables
-ENV PATH="/usr/local/bin:${PATH}"
-ENV LD_LIBRARY_PATH="/usr/local/lib:${LD_LIBRARY_PATH:-}"
-ENV OMP_NUM_THREADS=4
-
-# Test commands availability
-RUN colmap --help > /dev/null && echo "COLMAP (CPU) installed successfully" && \
-    DensifyPointCloud --help > /dev/null 2>&1 && echo "OpenMVS (CPU) installed successfully"
-
-# Default command
-CMD ["bash"]
+# Example: Command to run bash (default container command)
+CMD ["/bin/bash"]
