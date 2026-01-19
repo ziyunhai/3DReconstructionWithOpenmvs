@@ -112,6 +112,7 @@ ARG DEBIAN_FRONTEND=noninteractive
 
 # Install minimal runtime dependencies required by both COLMAP and OpenMVS
 # Updated package names for Ubuntu 24.04: libglfw3, libopencv-imgcodecs-dev
+# Removed libnanoflann1t64 as it was not found; relying on libnanoflann-dev from builder stage
 RUN apt-get update && \
     apt-get install -y --no-install-recommends --no-install-suggests \
         libboost-program-options1.83.0 \
@@ -149,7 +150,6 @@ RUN apt-get update && \
         libgmp10 \
         libmpfr6 \
         zlib1g \
-        libnanoflann1t64 \
         ca-certificates && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/*
