@@ -5,13 +5,25 @@ ARG DEBIAN_FRONTEND=noninteractive
 
 RUN apt-get update && \
     apt-get install -y \
+        build-essential \
         git \
         cmake \
-        ninja-build \
-        build-essential \
+        libpng-dev \
+        libjpeg-dev \
+        libtiff-dev \
+        libglu1-mesa-dev \
+        libglew-dev \
+        libglfw3-dev \
+        libboost-iostreams-dev \
         libboost-program-options-dev \
-        libboost-graph-dev \
         libboost-system-dev \
+        libboost-serialization-dev \
+        libopencv-dev \
+        libboost-thread-dev \
+        libgmp-dev \
+        libmpfr-dev \
+        zlib1g-dev \
+        python3-dev \
         libeigen3-dev \
         libopenimageio-dev \
         openimageio-tools \
@@ -20,7 +32,6 @@ RUN apt-get update && \
         libgtest-dev \
         libgmock-dev \
         libsqlite3-dev \
-        libglew-dev \
         qt6-base-dev \
         libqt6opengl6-dev \
         libqt6openglwidgets6 \
@@ -29,27 +40,11 @@ RUN apt-get update && \
         libcurl4-openssl-dev \
         libssl-dev \
         libmkl-full-dev \
-        libpng-dev \
-        libjpeg-dev \
-        libtiff-dev \
-        libglu1-mesa-dev \
-        libglew-dev \
-        libglfw3-dev \
-        libboost-iostreams-dev \
-        libboost-serialization-dev \
-        libopencv-dev \
-        libboost-thread-dev \
-        libgmp-dev \
-        libmpfr-dev \
-        zlib1g-dev \
-        python3-dev \
         libnanoflann-dev && \
     rm -rf /var/lib/apt/lists/*
 
-# Fix potential issue with OpenImageIO's OpenCV dependency
 RUN mkdir -p /usr/include/opencv4
 
-# Build and install COLMAP first (using system Eigen/Ceres)
 ARG COLMAP_GIT_COMMIT=main
 RUN git clone https://github.com/colmap/colmap.git && \
     cd colmap && \
@@ -57,7 +52,6 @@ RUN git clone https://github.com/colmap/colmap.git && \
     git checkout FETCH_HEAD && \
     mkdir build && \
     cd build && \
-    # Note: BUILD_CUDA_TOOLS is OFF, BLA_VENDOR is Intel10_64lp
     cmake .. \
         -GNinja \
         -DCMAKE_BUILD_TYPE=Release \
@@ -66,42 +60,31 @@ RUN git clone https://github.com/colmap/colmap.git && \
         -DBLA_VENDOR=Intel10_64lp && \
     ninja install
 
-# Now build and install Eigen (required by OpenMVS) - this might override system headers
 RUN git clone https://gitlab.com/libeigen/eigen.git --branch 3.4 && \
     mkdir eigen_build && \
     cd eigen_build && \
-    cmake ../eigen \
-        -DCMAKE_BUILD_TYPE=Release \
-        -DCMAKE_INSTALL_PREFIX=/usr/local && \
+    cmake ../eigen && \
     make -j$(nproc) && make install && \
     cd .. && rm -rf eigen_build eigen
 
-# Build and install CGAL (required by OpenMVS)
 RUN git clone https://github.com/CGAL/cgal.git --branch=v6.0.1 && \
     mkdir cgal_build && \
     cd cgal_build && \
-    cmake ../cgal \
-        -DCMAKE_BUILD_TYPE=Release \
-        -DCMAKE_INSTALL_PREFIX=/usr/local && \
+    cmake ../cgal && \
     make -j$(nproc) && make install && \
     cd .. && rm -rf cgal_build cgal
 
-# Build and install OpenMVS (with JPEG XL support disabled via multiple flags)
-RUN git clone https://github.com/cdcseacave/openMVS.git && \
-    git clone https://github.com/cdcseacave/VCG.git vcglib && \
+RUN git clone https://github.com/cdcseacave/VCG.git vcglib && \
+    git clone https://github.com/cdcseacave/openMVS.git && \
     mkdir openMVS_build && \
     cd openMVS_build && \
-    # Note: OpenMVS_USE_CUDA is OFF, OpenMVS_USE_JPEGXL is OFF, CMAKE_DISABLE_FIND_PACKAGE_JPEGXL is TRUE. Set CMAKE_PREFIX_PATH to find manually installed Eigen/CGAL
     cmake ../openMVS \
         -DCMAKE_BUILD_TYPE=Release \
         -DVCG_ROOT=/vcglib \
         -DOpenMVS_USE_CUDA=OFF \
-        -DOpenMVS_USE_JPEGXL=OFF \
-        -DCMAKE_INSTALL_PREFIX=/usr/local \
-        -DCMAKE_PREFIX_PATH="/usr/local;/usr" \
-        -DCMAKE_DISABLE_FIND_PACKAGE_JPEGXL=TRUE && \
+        -DCMAKE_INSTALL_PREFIX=/usr/local && \
     make -j$(nproc) && make install && \
-    cd .. && rm -rf openMVS_build vcglib
+    cd .. && rm -rf openMVS_build vcglib openMVS
 
 
 # --- Runtime Stage ---
@@ -150,17 +133,12 @@ RUN apt-get update && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/*
 
-# Copy installed libraries and executables from builder stage
 COPY --from=builder /usr/local/lib /usr/local/lib
 COPY --from=builder /usr/local/bin /usr/local/bin
-# Copy COLMAP installation from builder stage
 COPY --from=builder /colmap-install/ /usr/local/
 
-# Update the dynamic linker cache to recognize new libraries
 RUN ldconfig
 
-# Set the working directory
 WORKDIR /workspace
 
-# Example: Command to run bash (default container command)
 CMD ["/bin/bash"]
