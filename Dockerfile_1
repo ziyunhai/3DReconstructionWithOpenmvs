@@ -4,12 +4,14 @@ FROM ubuntu:24.04 AS builder
 ARG DEBIAN_FRONTEND=noninteractive
 
 # Install common build tools and dependencies for both COLMAP and OpenMVS
+# Install system Eigen and Ceres first to ensure COLMAP uses compatible versions
 RUN apt-get update && \
     apt-get install -y \
         git \
         cmake \
         ninja-build \
         build-essential \
+        # COLMAP dependencies
         libboost-program-options-dev \
         libboost-graph-dev \
         libboost-system-dev \
@@ -30,6 +32,7 @@ RUN apt-get update && \
         libcurl4-openssl-dev \
         libssl-dev \
         libmkl-full-dev \
+        # OpenMVS dependencies
         libpng-dev \
         libjpeg-dev \
         libtiff-dev \
@@ -49,7 +52,24 @@ RUN apt-get update && \
 # Fix potential issue with OpenImageIO's OpenCV dependency
 RUN mkdir -p /usr/include/opencv4
 
-# Build and install Eigen (required by OpenMVS)
+# Build and install COLMAP first (using system Eigen/Ceres)
+ARG COLMAP_GIT_COMMIT=main
+RUN git clone https://github.com/colmap/colmap.git && \
+    cd colmap && \
+    git fetch https://github.com/colmap/colmap.git ${COLMAP_GIT_COMMIT} && \
+    git checkout FETCH_HEAD && \
+    mkdir build && \
+    cd build && \
+    # Note: BUILD_CUDA_TOOLS is OFF, BLA_VENDOR is Intel10_64lp
+    cmake .. \
+        -GNinja \
+        -DCMAKE_BUILD_TYPE=Release \
+        -DCMAKE_INSTALL_PREFIX=/colmap-install \
+        -DBUILD_CUDA_TOOLS=OFF \
+        -DBLA_VENDOR=Intel10_64lp && \
+    ninja install
+
+# Now build and install Eigen (required by OpenMVS) - this might override system headers
 RUN git clone https://gitlab.com/libeigen/eigen.git --branch 3.4 && \
     mkdir eigen_build && \
     cd eigen_build && \
@@ -69,34 +89,18 @@ RUN git clone https://github.com/CGAL/cgal.git --branch=v6.0.1 && \
     make -j$(nproc) && make install && \
     cd .. && rm -rf cgal_build cgal
 
-# Build and install COLMAP
-ARG COLMAP_GIT_COMMIT=main
-RUN git clone https://github.com/colmap/colmap.git && \
-    cd colmap && \
-    git fetch https://github.com/colmap/colmap.git ${COLMAP_GIT_COMMIT} && \
-    git checkout FETCH_HEAD && \
-    mkdir build && \
-    cd build && \
-    # Note: BUILD_CUDA_TOOLS is OFF, BLA_VENDOR is Intel10_64lp
-    cmake .. \
-        -GNinja \
-        -DCMAKE_BUILD_TYPE=Release \
-        -DCMAKE_INSTALL_PREFIX=/colmap-install \
-        -DBUILD_CUDA_TOOLS=OFF \
-        -DBLA_VENDOR=Intel10_64lp && \
-    ninja install
-
 # Build and install OpenMVS
 RUN git clone https://github.com/cdcseacave/openMVS.git && \
     git clone https://github.com/cdcseacave/VCG.git vcglib && \
     mkdir openMVS_build && \
     cd openMVS_build && \
-    # Note: OpenMVS_USE_CUDA is OFF
+    # Note: OpenMVS_USE_CUDA is OFF. Set CMAKE_PREFIX_PATH to find manually installed Eigen/CGAL
     cmake ../openMVS \
         -DCMAKE_BUILD_TYPE=Release \
         -DVCG_ROOT=/vcglib \
         -DOpenMVS_USE_CUDA=OFF \
-        -DCMAKE_INSTALL_PREFIX=/usr/local && \
+        -DCMAKE_INSTALL_PREFIX=/usr/local \
+        -DCMAKE_PREFIX_PATH="/usr/local;/usr" && \
     make -j$(nproc) && make install && \
     cd .. && rm -rf openMVS_build vcglib
 
@@ -132,6 +136,7 @@ RUN apt-get update && \
         libmkl-intel-lp64 \
         libmkl-intel-thread \
         libmkl-core \
+        # OpenMVS runtime dependencies (updated names)
         libpng16-16 \
         libjpeg-turbo8 \
         libtiff6 \
@@ -146,6 +151,7 @@ RUN apt-get update && \
         libgmp10 \
         libmpfr6 \
         zlib1g \
+        # Basic utilities (optional but often useful)
         ca-certificates && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/*
@@ -164,4 +170,3 @@ WORKDIR /workspace
 
 # Example: Command to run bash (default container command)
 CMD ["/bin/bash"]
-
