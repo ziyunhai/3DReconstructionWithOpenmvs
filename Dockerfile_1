@@ -1,0 +1,206 @@
+# 基础构建阶段 - 使用普通Ubuntu镜像（无CUDA）
+FROM ubuntu:22.04 AS builder
+
+# 防止交互式安装提示
+ENV DEBIAN_FRONTEND=noninteractive
+
+# 设置镜像源和重试机制（使用国内镜像源）
+RUN echo 'Acquire::Retries "3";' > /etc/apt/apt.conf.d/80-retries && \
+    sed -i 's/archive.ubuntu.com/mirrors.tuna.tsinghua.edu.cn/g' /etc/apt/sources.list && \
+    sed -i 's/security.ubuntu.com/mirrors.tuna.tsinghua.edu.cn/g' /etc/apt/sources.list
+
+# 安装所有构建依赖项（不包含CUDA相关依赖）
+RUN apt-get update && apt-get install -y \
+    # 基本构建工具
+    git \
+    cmake \
+    ninja-build \
+    build-essential \
+    wget \
+    
+    # COLMAP依赖（CPU版本）
+    libboost-program-options-dev \
+    libboost-graph-dev \
+    libboost-system-dev \
+    libboost-all-dev \
+    libeigen3-dev \
+    libflann-dev \
+    libopenimageio-dev \
+    openimageio-tools \
+    libmetis-dev \
+    libsqlite3-dev \
+    libglew-dev \
+    qt6-base-dev \
+    libqt6opengl6-dev \
+    libqt6openglwidgets6 \
+    libgoogle-glog-dev \
+    libgflags-dev \
+    libgtest-dev \
+    libgmock-dev \
+    libopencv-dev \
+    libceres-dev \
+    libgmp-dev \
+    libmpfr-dev \
+    libcurl4-openssl-dev \
+    libssl-dev \
+    
+    # OpenMVS依赖（CPU版本）
+    libpng-dev \
+    libjpeg-dev \
+    libtiff-dev \
+    libglu1-mesa-dev \
+    libglfw3-dev \
+    python3-dev \
+    zlib1g-dev \
+    libboost-iostreams-dev \
+    libboost-serialization-dev \
+    libboost-thread-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+# 修复openimageio CMake配置问题
+RUN mkdir -p /usr/include/opencv4
+
+WORKDIR /opt
+
+# 安装Eigen 3.4（OpenMVS需要特定版本）
+RUN git clone https://gitlab.com/libeigen/eigen --branch 3.4 && \
+    mkdir eigen_build && \
+    cd eigen_build && \
+    cmake ../eigen && \
+    make && make install && \
+    cd .. && rm -rf eigen_build eigen
+
+# 安装CGAL v6.0.1（OpenMVS需要特定版本）
+RUN git clone https://github.com/cgal/cgal --branch=v6.0.1 && \
+    mkdir cgal_build && \
+    cd cgal_build && \
+    cmake ../cgal && \
+    make && make install && \
+    cd .. && rm -rf cgal_build cgal
+
+# 克隆VCGLib（OpenMVS依赖）
+RUN git clone https://github.com/cdcseacave/VCG.git vcglib
+
+# 构建和安装COLMAP（CPU版本）
+RUN git clone https://github.com/colmap/colmap.git && \
+    cd colmap && \
+    mkdir build && cd build && \
+    cmake .. \
+        -GNinja \
+        -DCMAKE_BUILD_TYPE=Release \
+        -DCUDA_ENABLED=OFF \
+        -DCMAKE_INSTALL_PREFIX=/usr/local \
+        -DBLA_VENDOR=Intel10_64lp && \
+    ninja install
+
+# 构建和安装OpenMVS（CPU版本）
+RUN git clone https://github.com/cdcseacave/openMVS.git --branch master && \
+    mkdir openMVS_build && \
+    cd openMVS_build && \
+    cmake ../openMVS \
+        -DCMAKE_BUILD_TYPE=Release \
+        -DVCG_ROOT=/opt/vcglib \
+        -DOpenMVS_USE_CUDA=OFF && \
+    make -j$(nproc) && \
+    make install && \
+    cd .. && rm -rf openMVS_build openMVS vcglib
+
+# 清理不必要的文件
+RUN ldconfig && \
+    apt-get clean && \
+    rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
+
+# 运行时阶段
+FROM ubuntu:22.04 AS runtime
+
+# 设置镜像源
+RUN sed -i 's/archive.ubuntu.com/mirrors.tuna.tsinghua.edu.cn/g' /etc/apt/sources.list && \
+    sed -i 's/security.ubuntu.com/mirrors.tuna.tsinghua.edu.cn/g' /etc/apt/sources.list
+
+# 安装运行时最小依赖（CPU版本）
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends --no-install-suggests \
+    # COLMAP运行时依赖
+    libboost-program-options1.74.0 \
+    libboost-system1.74.0 \
+    libboost-graph1.74.0 \
+    libc6 \
+    libomp5 \
+    libopengl0 \
+    libmetis5 \
+    libceres-dev \
+    libopenimageio2.2 \
+    libgcc-s1 \
+    libgl1 \
+    libglew2.2 \
+    libgoogle-glog0v5 \
+    libqt6core6 \
+    libqt6gui6 \
+    libqt6widgets6 \
+    libqt6openglwidgets6 \
+    libcurl4 \
+    libssl3 \
+    libflann1.9 \
+    libopencv-dev \
+    libgmp-dev \
+    libmpfr-dev \
+    
+    # OpenMVS运行时依赖
+    libpng16-16 \
+    libjpeg-turbo8 \
+    libtiff5 \
+    libglu1-mesa \
+    libglfw3 \
+    python3 \
+    zlib1g \
+    libboost-iostreams1.74.0 \
+    libboost-serialization1.74.0 \
+    libboost-thread1.74.0 \
+    && apt-get clean && \
+    rm -rf /var/lib/apt/lists/*
+
+# 从构建阶段复制安装的文件
+COPY --from=builder /usr/local/ /usr/local/
+
+# 设置环境变量
+ENV PATH="/usr/local/bin:${PATH}" \
+    LD_LIBRARY_PATH="/usr/local/lib:${LD_LIBRARY_PATH}" \
+    VCG_ROOT="/usr/local"
+
+WORKDIR /workspace
+
+# 创建检查脚本（CPU版本）
+RUN echo '#!/bin/bash\n\
+echo "=== Checking COLMAP installation (CPU Version) ==="\n\
+colmap --version || echo "COLMAP not found"\n\
+echo -e "\\n=== Checking OpenMVS installation (CPU Version) ==="\n\
+which DensifyPointCloud && echo "DensifyPointCloud found (CPU)" || echo "DensifyPointCloud not found"\n\
+which ReconstructMesh && echo "ReconstructMesh found (CPU)" || echo "ReconstructMesh not found"\n\
+which RefineMesh && echo "RefineMesh found (CPU)" || echo "RefineMesh not found"\n\
+which TextureMesh && echo "TextureMesh found (CPU)" || echo "TextureMesh not found"\n\
+echo -e "\\n=== Checking libraries ==="\n\
+ldconfig -p | grep -E "(colmap|openmvs|ceres|boost|opencv)" | head -20\n\
+echo -e "\\n=== CPU Information ==="\n\
+lscpu | grep "Model name"\n\
+echo -e "\\n=== Installation check completed ==="' > /opt/check_install.sh && \
+    chmod +x /opt/check_install.sh
+
+# 创建测试数据目录和示例脚本
+RUN mkdir -p /workspace/test_data && \
+    echo '#!/bin/bash\n\
+echo "COLMAP and OpenMVS CPU Version Test"\n\
+echo "This is a CPU-only version without CUDA acceleration."\n\
+echo "To test COLMAP, run: colmap --help"\n\
+echo "To test OpenMVS, run one of the following:"\n\
+echo "  DensifyPointCloud --help"\n\
+echo "  ReconstructMesh --help"\n\
+echo "  RefineMesh --help"\n\
+echo "  TextureMesh --help"\n\
+echo -e "\\nNote: Processing will be slower without GPU acceleration."' > /opt/test_tools.sh && \
+    chmod +x /opt/test_tools.sh
+
+# 验证安装
+RUN /opt/check_install.sh
+
+# 默认命令
+CMD ["/bin/bash", "-c", "echo \"COLMAP + OpenMVS (CPU Version) Ready!\" && /bin/bash"]
