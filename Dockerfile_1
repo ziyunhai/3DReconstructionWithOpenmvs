@@ -52,61 +52,64 @@ RUN apt-get update && \
         libmpfr-dev \
         zlib1g-dev \
         python3-dev \
-        pkg-config
+        pkg-config && \
+    rm -rf /var/lib/apt/lists/*
 
 # Fix issue in Ubuntu's openimageio CMake config
 RUN mkdir -p /usr/include/opencv4
 
 # Build and install COLMAP (CPU version)
-RUN git clone https://github.com/colmap/colmap.git
-RUN cd colmap && \
-    git fetch https://github.com/colmap/colmap.git ${COLMAP_GIT_COMMIT} && \
+RUN git clone https://github.com/colmap/colmap.git && \
+    cd colmap && \
+    git fetch origin ${COLMAP_GIT_COMMIT} && \
     git checkout FETCH_HEAD && \
     mkdir build && \
     cd build && \
     cmake .. \
         -GNinja \
+        -DCMAKE_BUILD_TYPE=Release \
         -DCMAKE_INSTALL_PREFIX=/colmap-install \
         -DCUDA_ENABLED=OFF \
         -DBLA_VENDOR=OpenBLAS && \
-    ninja install
+    ninja install && \
+    cd / && rm -rf colmap
 
 # Build and install Eigen (for OpenMVS)
-RUN git clone https://gitlab.com/libeigen/eigen --branch 3.4 && \
+RUN git clone https://gitlab.com/libeigen/eigen.git --branch 3.4 && \
     mkdir eigen_build && \
     cd eigen_build && \
-    cmake . ../eigen && \
-    make && make install && \
-    cd .. && rm -rf eigen_build eigen
+    cmake ../eigen && \
+    make -j$(nproc) && \
+    make install && \
+    ldconfig && \
+    cd / && rm -rf eigen_build eigen
 
 # Build and install CGAL
-RUN git clone https://github.com/cgal/cgal --branch=v6.0.1 && \
+RUN git clone https://github.com/CGAL/cgal.git --branch v6.0.1 && \
     mkdir cgal_build && \
     cd cgal_build && \
-    cmake . ../cgal && \
-    make && make install && \
-    cd .. && rm -rf cgal_build cgal
+    cmake -DCMAKE_BUILD_TYPE=Release ../cgal && \
+    make -j$(nproc) && \
+    make install && \
+    ldconfig && \
+    cd / && rm -rf cgal_build cgal
 
 # Clone VCG library for OpenMVS
-RUN git clone https://github.com/cdcseacave/VCG.git vcglib
+RUN git clone https://github.com/cdcseacave/VCG.git /vcglib
 
 # Clone and build OpenMVS (CPU version)
-RUN if [ "${OPENMVS_BRANCH}" = "master" ]; then \
-        git clone https://github.com/cdcseacave/openMVS.git --branch master; \
-    else \
-        git clone https://github.com/cdcseacave/openMVS.git --branch develop; \
-    fi
-
-RUN mkdir openMVS_build && \
+RUN git clone https://github.com/cdcseacave/openMVS.git --branch ${OPENMVS_BRANCH} && \
+    mkdir openMVS_build && \
     cd openMVS_build && \
-    cmake . ../openMVS \
+    cmake ../openMVS \
         -DCMAKE_BUILD_TYPE=Release \
         -DVCG_ROOT=/vcglib \
         -DCMAKE_INSTALL_PREFIX=/openmvs-install \
         -DOpenMVS_USE_CUDA=OFF && \
     make -j$(nproc) && \
     make install && \
-    cd .. && rm -rf openMVS_build vcglib openMVS
+    ldconfig && \
+    cd / && rm -rf openMVS_build vcglib openMVS
 
 # Stage 2: Runtime stage
 FROM ubuntu:${UBUNTU_VERSION} AS runtime
@@ -150,8 +153,7 @@ RUN apt-get update && \
         libglfw3 \
         libblas3 \
         liblapack3 \
-        libopenblas-dev \
-        libopenblas-base && \
+        libopenblas0 && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/*
 
@@ -179,8 +181,8 @@ ENV LD_LIBRARY_PATH="/usr/local/lib:${LD_LIBRARY_PATH:-}"
 ENV OMP_NUM_THREADS=4
 
 # Test commands availability
-RUN command -v colmap && echo "COLMAP (CPU) installed successfully" && \
-    command -v DensifyPointCloud && echo "OpenMVS (CPU) installed successfully"
+RUN colmap --help > /dev/null && echo "COLMAP (CPU) installed successfully" && \
+    DensifyPointCloud --help > /dev/null 2>&1 && echo "OpenMVS (CPU) installed successfully"
 
 # Default command
 CMD ["bash"]
