@@ -40,7 +40,8 @@ RUN apt-get update && \
         libcurl4-openssl-dev \
         libssl-dev \
         libmkl-full-dev \
-        libnanoflann-dev && \
+        libnanoflann-dev \
+        libboost-graph-dev && \
     rm -rf /var/lib/apt/lists/*
 
 RUN mkdir -p /usr/include/opencv4
@@ -52,14 +53,13 @@ RUN git clone https://github.com/colmap/colmap.git && \
     git checkout FETCH_HEAD && \
     mkdir build && \
     cd build && \
-    # Switched from -GNinja to -G"Unix Makefiles" due to ninja finding issues
     cmake .. \
         -G"Unix Makefiles" \
         -DCMAKE_BUILD_TYPE=Release \
         -DCMAKE_INSTALL_PREFIX=/colmap-install \
         -DBUILD_CUDA_TOOLS=OFF \
         -DBLA_VENDOR=Intel10_64lp && \
-    make -j$(nproc) install # Use make instead of ninja
+    make -j$(nproc) install
 
 RUN git clone https://gitlab.com/libeigen/eigen.git --branch 3.4 && \
     mkdir eigen_build && \
