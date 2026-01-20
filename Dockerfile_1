@@ -3,7 +3,7 @@ FROM ubuntu:24.04 AS deps-builder
 
 ARG DEBIAN_FRONTEND=noninteractive
 
-# Install ALL base dependencies upfront, EXCEPT system Ceres
+# Install ALL base dependencies upfront, EXCEPT system Ceres and CGAL (we handle them separately)
 RUN apt-get update && \
     apt-get install -y \
         git \
@@ -16,6 +16,7 @@ RUN apt-get update && \
         libopenimageio-dev \
         openimageio-tools \
         libmetis-dev \
+        libgoogle-glog-dev \
         libgtest-dev \
         libgmock-dev \
         libsqlite3-dev \
@@ -66,7 +67,7 @@ RUN git clone https://gitlab.com/libeigen/eigen.git --branch 3.4 && \
     make -j$(nproc) && make install && \
     cd .. && rm -rf eigen_build eigen
 
-# 2. Copy CGAL headers (header-only library, needed for OpenMVS)
+# 2. Copy CGAL headers (header-only library, needed for OpenMVS and system CGAL for COLMAP)
 RUN git clone https://github.com/CGAL/cgal.git --branch=v6.0.1 && \
     cd cgal && \
     cp -r Installation/include/CGAL /usr/local/include/ && \
@@ -121,12 +122,12 @@ RUN mkdir opencv_build && \
     rm -rf opencv opencv_contrib opencv_build
 
 
-# --- Stage 2: Build COLMAP using system libraries (before manual Eigen affects CMake find behavior) ---
+# --- Stage 2: Build COLMAP using system libraries (including CGAL) ---
 FROM ubuntu:24.04 AS colmap-builder
 
 ARG DEBIAN_FRONTEND=noninteractive
 
-# Install ALL base dependencies including system Ceres
+# Install ALL base dependencies including system Ceres and CGAL
 RUN apt-get update && \
     apt-get install -y \
         git \
@@ -151,7 +152,8 @@ RUN apt-get update && \
         libceres-dev \
         libcurl4-openssl-dev \
         libssl-dev \
-        libmkl-full-dev && \
+        libmkl-full-dev \
+        libcgal-dev && \
     rm -rf /var/lib/apt/lists/*
 
 RUN mkdir -p /usr/include/opencv4
@@ -163,7 +165,8 @@ RUN git clone https://github.com/colmap/colmap.git && \
     git checkout FETCH_HEAD && \
     mkdir build && \
     cd build && \
-    # ONLY search in system paths for COLMAP, avoiding manually installed Eigen/Ceres
+    # ONLY search in system paths for COLMAP, avoiding manually installed Eigen/Ceres from /usr/local
+    # CGAL from system (libcgal-dev) should be found via standard CMAKE_PREFIX_PATH
     cmake .. \
         -GNinja \
         -DCMAKE_BUILD_TYPE=Release \
@@ -171,9 +174,6 @@ RUN git clone https://github.com/colmap/colmap.git && \
         -DBUILD_CUDA_TOOLS=OFF \
         -DBLA_VENDOR=Intel10_64lp \
         -DCMAKE_PREFIX_PATH="/usr;/usr/local;/opt;/opt/local" && \
-    # The default CMAKE_PREFIX_PATH usually includes /usr/local, so explicitly listing it shouldn't hurt
-    # The key is that Ceres from /usr/lib/x86_64-linux-gnu/cmake/Ceres/ should be found first
-    # and it should be linked against system Eigen
     ninja install
 
 
@@ -236,7 +236,6 @@ RUN apt-get update && \
         libomp5 \
         libopengl0 \
         libmetis5 \
-        # libceres4t64 \ # Using manually built Ceres from builder stage
         libopenimageio2.4t64 \
         libgcc-s1 \
         libgl1 \
