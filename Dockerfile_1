@@ -58,20 +58,7 @@ RUN apt-get update && \
 
 RUN mkdir -p /usr/include/opencv4
 
-ARG COLMAP_GIT_COMMIT=main
-RUN git clone https://github.com/colmap/colmap.git && \
-    cd colmap && \
-    git fetch https://github.com/colmap/colmap.git ${COLMAP_GIT_COMMIT} && \
-    git checkout FETCH_HEAD && \
-    mkdir build && \
-    cd build && \
-    cmake .. \
-        -GNinja \
-        -DCMAKE_BUILD_TYPE=Release \
-        -DCMAKE_INSTALL_PREFIX=/colmap-install \
-        -DBUILD_CUDA_TOOLS=OFF \
-        -DBLA_VENDOR=Intel10_64lp && \
-    ninja install
+
 
 RUN git clone https://gitlab.com/libeigen/eigen.git --branch 3.4 && \
     mkdir eigen_build && \
@@ -133,6 +120,22 @@ RUN mkdir opencv_build && \
     make install && \
     cd .. && \
     rm -rf opencv opencv_contrib opencv_build
+	
+ARG COLMAP_GIT_COMMIT=main
+RUN git clone https://github.com/colmap/colmap.git && \
+    cd colmap && \
+    git fetch https://github.com/colmap/colmap.git ${COLMAP_GIT_COMMIT} && \
+    git checkout FETCH_HEAD && \
+    mkdir build && \
+    cd build && \
+    cmake .. \
+        -GNinja \
+        -DCMAKE_BUILD_TYPE=Release \
+        -DCMAKE_INSTALL_PREFIX=/colmap-install \
+        -DBUILD_CUDA_TOOLS=OFF \
+        -DBLA_VENDOR=Intel10_64lp && \
+    ninja install
+	
 
 RUN git clone https://github.com/cdcseacave/VCG.git vcglib && \
     git clone https://github.com/cdcseacave/openMVS.git && \
