@@ -1,4 +1,4 @@
-# --- Stage 1: Build and install dependencies that need manual compilation (Eigen, OpenCV, CGAL headers) ---
+# --- Stage 1: Build and install dependencies that need manual compilation (Eigen, OpenCV, Ceres) ---
 FROM ubuntu:24.04 AS deps-builder
 
 ARG DEBIAN_FRONTEND=noninteractive
@@ -64,11 +64,6 @@ RUN git clone https://gitlab.com/libeigen/eigen.git --branch 3.4 && \
         -DCMAKE_INSTALL_PREFIX=/usr/local && \
     make -j$(nproc) && make install && \
     cd .. && rm -rf eigen_build eigen
-
-RUN git clone https://github.com/CGAL/cgal.git --branch=v6.0.1 && \
-    cd cgal && \
-    cp -r Installation/include/CGAL /usr/local/include/ && \
-    cd .. && rm -rf cgal
 
 RUN wget -O opencv.zip https://github.com/opencv/opencv/archive/refs/tags/4.13.0.zip && \
     wget -O opencv_contrib.zip https://github.com/opencv/opencv_contrib/archive/refs/tags/4.13.0.zip && \
@@ -169,7 +164,7 @@ RUN git clone https://github.com/colmap/colmap.git && \
     ninja install
 
 
-# --- Stage 3: Build OpenMVS using manually installed libraries and system CGAL config ---
+# --- Stage 3: Build OpenMVS using manually installed libraries and system CGAL ---
 FROM deps-builder AS openmvs-builder
 
 RUN apt-get update && \
