@@ -10,15 +10,12 @@ RUN apt-get update && \
         cmake \
         ninja-build \
         build-essential \
-        # Dependencies for COLMAP (excluding libceres-dev and its direct deps for manual build)
         libboost-program-options-dev \
         libboost-graph-dev \
         libboost-system-dev \
-        # libeigen3-dev \ # We will install this manually
         libopenimageio-dev \
         openimageio-tools \
         libmetis-dev \
-        # libgoogle-glog-dev \ # We will install this manually with Ceres
         libgtest-dev \
         libgmock-dev \
         libsqlite3-dev \
@@ -26,18 +23,15 @@ RUN apt-get update && \
         qt6-base-dev \
         libqt6opengl6-dev \
         libqt6openglwidgets6 \
-        # CGAL dependencies (not libcgal-dev, as we install headers manually)
         libboost-program-options-dev \
         libboost-system-dev \
         libboost-thread-dev \
         libgmp-dev \
         libmpfr-dev \
         zlib1g-dev \
-        # libceres-dev \ # We will build this manually
         libcurl4-openssl-dev \
         libssl-dev \
         libmkl-full-dev \
-        # OpenMVS dependencies
         libpng-dev \
         libjpeg-dev \
         libtiff-dev \
