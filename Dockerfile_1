@@ -1,21 +1,3 @@
-好的，看来问题的核心——即 Ceres 和 Eigen 的版本冲突——在单个构建阶段内难以通过简单的顺序调整或 CMake 参数来彻底规避。每次我们安装新的 Eigen 版本到 `/usr/local`，它就会影响后续在同一阶段内运行的 CMake 配置过程。
-
-您提出的**多阶段构建**或**环境变量隔离**是解决这类问题的有效思路。特别是**多阶段构建**，它能提供更强的隔离性。
-
-**解决思路分析：**
-
-1.  **环境变量 (`LD_LIBRARY_PATH`, `CPATH`, `PKG_CONFIG_PATH` 等)**: 在单个构建阶段内，通过修改环境变量来影响 CMake 的查找行为是一种方法。例如，在构建 COLMAP 时，可以临时将 `CMAKE_PREFIX_PATH` 设置为只包含系统路径（`/usr`），从而避免找到 `/usr/local` 中的 Eigen。但这需要非常小心地管理每个步骤的环境，容易出错且不够优雅。
-2.  **多阶段构建 (Multi-stage Builds)**: 这是最推荐的方法。我们可以创建三个阶段：
-    *   **Stage 1 (`deps-builder`)**: 安装所有基础依赖，构建并安装手动需要的库（Eigen, Ceres, OpenCV, CGAL headers）。
-    *   **Stage 2 (`colmap-builder`)**: 从 `deps-builder` 复制基础依赖和手动库，但**专门用于构建 COLMAP**。在此阶段，我们可以通过不将 `/usr/local/lib` 添加到 CMake 查找路径，或者通过设置特定的 CMake 变量（如 `CERES_ROOT`, `EIGEN3_ROOT`）来强制 COLMAP 使用系统库（或者更精确地，使用我们期望的库版本）。或者，更直接地，此阶段可以只使用从 `deps-builder` 复制过来的库，其中 Ceres 是用我们期望的 Eigen 版本编译的。
-    *   **Stage 3 (`openmvs-builder`)**: 从 `deps-builder` 复制所有库，从 `colmap-builder` 复制编译好的 COLMAP。在此阶段构建 OpenMVS，它可以自由地使用 `/usr/local` 中的所有手动安装的库。
-    *   **Stage 4 (`runtime`)**: 从 `openmvs-builder` 复制所有编译好的二进制文件和库。
-
-    这种方式通过 Docker 的层隔离，确保了 COLMAP 构建时的环境不会受到 OpenMVS 构建所需库的影响，反之亦然。
-
-**基于多阶段构建的 Dockerfile:**
-
-```dockerfile
 # --- Stage 1: Build and install common dependencies (Eigen, Ceres, OpenCV, CGAL) ---
 FROM ubuntu:24.04 AS deps-builder
 
@@ -268,4 +250,3 @@ WORKDIR /workspace
 
 # Default command
 CMD ["/bin/bash"]
-```
