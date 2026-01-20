@@ -3,6 +3,8 @@ FROM ubuntu:24.04 AS builder
 
 ARG DEBIAN_FRONTEND=noninteractive
 
+# Install ALL dependencies upfront, including those for COLMAP and OpenMVS
+# This ensures system Eigen/Ceres are available for COLMAP
 RUN apt-get update && \
     apt-get install -y \
         git \
@@ -58,8 +60,29 @@ RUN apt-get update && \
 
 RUN mkdir -p /usr/include/opencv4
 
+RUN git clone https://github.com/CGAL/cgal.git --branch=v6.0.1 && \
+    cd cgal && \
+    cp -r Installation/include/CGAL /usr/local/include/ && \
+    cd .. && rm -rf cgal
+	
+# Build COLMAP first, using system Eigen and Ceres to avoid ODR issues
+ARG COLMAP_GIT_COMMIT=main
+RUN git clone https://github.com/colmap/colmap.git && \
+    cd colmap && \
+    git fetch https://github.com/colmap/colmap.git ${COLMAP_GIT_COMMIT} && \
+    git checkout FETCH_HEAD && \
+    mkdir build && \
+    cd build && \
+    cmake .. \
+        -GNinja \
+        -DCMAKE_BUILD_TYPE=Release \
+        -DCMAKE_INSTALL_PREFIX=/colmap-install \
+        -DBUILD_CUDA_TOOLS=OFF \
+        -DBLA_VENDOR=Intel10_64lp && \
+    ninja install
 
-
+# Now build and install Eigen, CGAL, and OpenCV (for OpenMVS)
+# These will be installed to /usr/local and should be found by OpenMVS's CMake
 RUN git clone https://gitlab.com/libeigen/eigen.git --branch 3.4 && \
     mkdir eigen_build && \
     cd eigen_build && \
@@ -69,10 +92,7 @@ RUN git clone https://gitlab.com/libeigen/eigen.git --branch 3.4 && \
     make -j$(nproc) && make install && \
     cd .. && rm -rf eigen_build eigen
 
-RUN git clone https://github.com/CGAL/cgal.git --branch=v6.0.1 && \
-    cd cgal && \
-    cp -r Installation/include/CGAL /usr/local/include/ && \
-    cd .. && rm -rf cgal
+
 
 # Updated OpenCV version to 4.13.0
 RUN wget -O opencv.zip https://github.com/opencv/opencv/archive/refs/tags/4.13.0.zip && \
@@ -120,23 +140,8 @@ RUN mkdir opencv_build && \
     make install && \
     cd .. && \
     rm -rf opencv opencv_contrib opencv_build
-	
-ARG COLMAP_GIT_COMMIT=main
-RUN git clone https://github.com/colmap/colmap.git && \
-    cd colmap && \
-    git fetch https://github.com/colmap/colmap.git ${COLMAP_GIT_COMMIT} && \
-    git checkout FETCH_HEAD && \
-    mkdir build && \
-    cd build && \
-    cmake .. \
-        -GNinja \
-        -DCMAKE_BUILD_TYPE=Release \
-        -DCMAKE_INSTALL_PREFIX=/colmap-install \
-        -DBUILD_CUDA_TOOLS=OFF \
-        -DBLA_VENDOR=Intel10_64lp && \
-    ninja install
-	
 
+# Build and install OpenMVS, ensuring it finds the manually installed dependencies
 RUN git clone https://github.com/cdcseacave/VCG.git vcglib && \
     git clone https://github.com/cdcseacave/openMVS.git && \
     mkdir openMVS_build && \
