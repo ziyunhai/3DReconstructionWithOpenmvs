@@ -24,7 +24,12 @@ RUN apt-get update && \
         qt6-base-dev \
         libqt6opengl6-dev \
         libqt6openglwidgets6 \
-        libcgal-dev \
+        libboost-program-options-dev \
+        libboost-system-dev \
+        libboost-thread-dev \
+        libgmp-dev \
+        libmpfr-dev \
+        zlib1g-dev \
         libceres-dev \
         libcurl4-openssl-dev \
         libssl-dev \
@@ -82,6 +87,7 @@ RUN git clone https://github.com/CGAL/cgal.git --branch=v6.0.1 && \
     cp -r Installation/include/CGAL /usr/local/include/ && \
     cd .. && rm -rf cgal
 
+# Updated OpenCV version to 4.13.0
 RUN wget -O opencv.zip https://github.com/opencv/opencv/archive/refs/tags/4.13.0.zip && \
     wget -O opencv_contrib.zip https://github.com/opencv/opencv_contrib/archive/refs/tags/4.13.0.zip && \
     unzip opencv.zip && \
@@ -128,8 +134,8 @@ RUN mkdir opencv_build && \
     cd .. && \
     rm -rf opencv opencv_contrib opencv_build
 
-RUN git clone https://github.com/cdcseacave/openMVS.git && \
-    git clone https://github.com/cdcseacave/VCG.git vcglib && \
+RUN git clone https://github.com/cdcseacave/VCG.git vcglib && \
+    git clone https://github.com/cdcseacave/openMVS.git && \
     mkdir openMVS_build && \
     cd openMVS_build && \
     cmake ../openMVS \
@@ -139,7 +145,7 @@ RUN git clone https://github.com/cdcseacave/openMVS.git && \
         -DCMAKE_INSTALL_PREFIX=/usr/local \
         -DCMAKE_PREFIX_PATH="/usr/local;/usr" && \
     make -j$(nproc) && make install && \
-    cd .. && rm -rf openMVS_build vcglib
+    cd .. && rm -rf openMVS_build vcglib openMVS
 
 
 # --- Runtime Stage ---
@@ -208,5 +214,3 @@ RUN ldconfig
 WORKDIR /workspace
 
 CMD ["/bin/bash"]
-
-
