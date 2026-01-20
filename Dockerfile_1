@@ -1,9 +1,8 @@
-# --- Stage 1: Build and install dependencies that need manual compilation (Eigen, OpenCV, CGAL) ---
+# --- Stage 1: Build and install dependencies that need manual compilation (Eigen, OpenCV, CGAL headers) ---
 FROM ubuntu:24.04 AS deps-builder
 
 ARG DEBIAN_FRONTEND=noninteractive
 
-# Install ALL base dependencies upfront, EXCEPT system Ceres and CGAL (we handle them separately)
 RUN apt-get update && \
     apt-get install -y \
         git \
@@ -57,7 +56,6 @@ RUN apt-get update && \
 
 RUN mkdir -p /usr/include/opencv4
 
-# 1. Build and install Eigen (needed for both COLMAP and OpenMVS, via manual Ceres)
 RUN git clone https://gitlab.com/libeigen/eigen.git --branch 3.4 && \
     mkdir eigen_build && \
     cd eigen_build && \
@@ -67,14 +65,11 @@ RUN git clone https://gitlab.com/libeigen/eigen.git --branch 3.4 && \
     make -j$(nproc) && make install && \
     cd .. && rm -rf eigen_build eigen
 
-# 2. Copy CGAL headers (header-only library, needed for OpenMVS and system CGAL for COLMAP)
 RUN git clone https://github.com/CGAL/cgal.git --branch=v6.0.1 && \
     cd cgal && \
     cp -r Installation/include/CGAL /usr/local/include/ && \
     cd .. && rm -rf cgal
 
-# 3. Build and install OpenCV (needed for OpenMVS)
-# Updated OpenCV version to 4.13.0
 RUN wget -O opencv.zip https://github.com/opencv/opencv/archive/refs/tags/4.13.0.zip && \
     wget -O opencv_contrib.zip https://github.com/opencv/opencv_contrib/archive/refs/tags/4.13.0.zip && \
     unzip opencv.zip && \
@@ -127,7 +122,6 @@ FROM ubuntu:24.04 AS colmap-builder
 
 ARG DEBIAN_FRONTEND=noninteractive
 
-# Install ALL base dependencies including system Ceres and CGAL
 RUN apt-get update && \
     apt-get install -y \
         git \
@@ -165,8 +159,6 @@ RUN git clone https://github.com/colmap/colmap.git && \
     git checkout FETCH_HEAD && \
     mkdir build && \
     cd build && \
-    # ONLY search in system paths for COLMAP, avoiding manually installed Eigen/Ceres from /usr/local
-    # CGAL from system (libcgal-dev) should be found via standard CMAKE_PREFIX_PATH
     cmake .. \
         -GNinja \
         -DCMAKE_BUILD_TYPE=Release \
@@ -177,19 +169,18 @@ RUN git clone https://github.com/colmap/colmap.git && \
     ninja install
 
 
-# --- Stage 3: Build OpenMVS using manually installed libraries ---
+# --- Stage 3: Build OpenMVS using manually installed libraries and system CGAL config ---
 FROM deps-builder AS openmvs-builder
 
-# Install dependencies for building Ceres manually (must happen *after* deps-builder inherits)
 RUN apt-get update && \
     apt-get install -y \
         libgoogle-glog-dev \
         libgflags-dev \
         libatlas-base-dev \
-        libsuitesparse-dev && \
+        libsuitesparse-dev \
+        libcgal-dev && \
     rm -rf /var/lib/apt/lists/*
 
-# 1. Build and install Ceres (linked against manually installed Eigen from deps-builder)
 RUN git clone https://github.com/ceres-solver/ceres-solver.git && \
     cd ceres-solver && \
     git checkout 2.2.0 && \
@@ -205,15 +196,12 @@ RUN git clone https://github.com/ceres-solver/ceres-solver.git && \
     ninja && ninja install && \
     cd ../.. && rm -rf ceres-solver
 
-# Copy COLMAP installation from colmap-builder stage
 COPY --from=colmap-builder /colmap-install /colmap-install
 
-# Build and install OpenMVS
 RUN git clone https://github.com/cdcseacave/VCG.git vcglib && \
     git clone https://github.com/cdcseacave/openMVS.git && \
     mkdir openMVS_build && \
     cd openMVS_build && \
-    # Ensure OpenMVS CMake finds Eigen/CGAL/OpenCV/Ceres from /usr/local
     cmake ../openMVS \
         -DCMAKE_BUILD_TYPE=Release \
         -DVCG_ROOT=/vcglib \
@@ -280,16 +268,12 @@ RUN apt-get update && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/*
 
-# Copy libraries, executables, and COLMAP installation from openmvs-builder stage
 COPY --from=openmvs-builder /usr/local/lib /usr/local/lib
 COPY --from=openmvs-builder /usr/local/bin /usr/local/bin
 COPY --from=openmvs-builder /colmap-install/ /usr/local/
 
-# Update the dynamic linker cache to recognize new libraries
 RUN ldconfig
 
-# Set the working directory
 WORKDIR /workspace
 
-# Default command
 CMD ["/bin/bash"]
