@@ -1,28 +1,24 @@
-# --- Stage 1: Build and install common dependencies (Eigen, Ceres, OpenCV, CGAL) ---
+# --- Stage 1: Build and install dependencies that need manual compilation (Eigen, OpenCV, CGAL) ---
 FROM ubuntu:24.04 AS deps-builder
 
 ARG DEBIAN_FRONTEND=noninteractive
 
-# Install ALL base dependencies upfront
+# Install ALL base dependencies upfront, EXCEPT system Ceres
 RUN apt-get update && \
     apt-get install -y \
         git \
         cmake \
         ninja-build \
         build-essential \
-        # Dependencies for building Ceres
-        libgoogle-glog-dev \
-        libgflags-dev \
-        libatlas-base-dev \
-        libsuitesparse-dev \
-        # Other dependencies for COLMAP/OpenMVS
+        # Dependencies for COLMAP (excluding libceres-dev and its direct deps for manual build)
         libboost-program-options-dev \
         libboost-graph-dev \
         libboost-system-dev \
-        libeigen3-dev \
+        # libeigen3-dev \ # We will install this manually
         libopenimageio-dev \
         openimageio-tools \
         libmetis-dev \
+        # libgoogle-glog-dev \ # We will install this manually with Ceres
         libgtest-dev \
         libgmock-dev \
         libsqlite3-dev \
@@ -30,12 +26,18 @@ RUN apt-get update && \
         qt6-base-dev \
         libqt6opengl6-dev \
         libqt6openglwidgets6 \
+        # CGAL dependencies (not libcgal-dev, as we install headers manually)
         libboost-program-options-dev \
         libboost-system-dev \
         libboost-thread-dev \
         libgmp-dev \
         libmpfr-dev \
         zlib1g-dev \
+        # libceres-dev \ # We will build this manually
+        libcurl4-openssl-dev \
+        libssl-dev \
+        libmkl-full-dev \
+        # OpenMVS dependencies
         libpng-dev \
         libjpeg-dev \
         libtiff-dev \
@@ -46,6 +48,9 @@ RUN apt-get update && \
         libboost-serialization-dev \
         libopencv-dev \
         libboost-thread-dev \
+        libgmp-dev \
+        libmpfr-dev \
+        zlib1g-dev \
         python3-dev \
         libnanoflann-dev \
         libjxl-dev \
@@ -57,7 +62,7 @@ RUN apt-get update && \
 
 RUN mkdir -p /usr/include/opencv4
 
-# 1. Build and install Eigen
+# 1. Build and install Eigen (needed for both COLMAP and OpenMVS, via manual Ceres)
 RUN git clone https://gitlab.com/libeigen/eigen.git --branch 3.4 && \
     mkdir eigen_build && \
     cd eigen_build && \
@@ -67,29 +72,14 @@ RUN git clone https://gitlab.com/libeigen/eigen.git --branch 3.4 && \
     make -j$(nproc) && make install && \
     cd .. && rm -rf eigen_build eigen
 
-# 2. Build and install Ceres (linked against manually installed Eigen)
-RUN git clone https://github.com/ceres-solver/ceres-solver.git && \
-    cd ceres-solver && \
-    git checkout 2.2.0 && \
-    mkdir build && \
-    cd build && \
-    cmake .. \
-        -GNinja \
-        -DCMAKE_BUILD_TYPE=Release \
-        -DCMAKE_INSTALL_PREFIX=/usr/local \
-        -DBUILD_SHARED_LIBS=ON \
-        -DBUILD_TESTING=OFF \
-        -DBUILD_EXAMPLES=OFF && \
-    ninja && ninja install && \
-    cd ../.. && rm -rf ceres-solver
-
-# 3. Copy CGAL headers (header-only library)
+# 2. Copy CGAL headers (header-only library, needed for OpenMVS)
 RUN git clone https://github.com/CGAL/cgal.git --branch=v6.0.1 && \
     cd cgal && \
     cp -r Installation/include/CGAL /usr/local/include/ && \
     cd .. && rm -rf cgal
 
-# 4. Build and install OpenCV
+# 3. Build and install OpenCV (needed for OpenMVS)
+# Updated OpenCV version to 4.13.0
 RUN wget -O opencv.zip https://github.com/opencv/opencv/archive/refs/tags/4.13.0.zip && \
     wget -O opencv_contrib.zip https://github.com/opencv/opencv_contrib/archive/refs/tags/4.13.0.zip && \
     unzip opencv.zip && \
@@ -137,8 +127,40 @@ RUN mkdir opencv_build && \
     rm -rf opencv opencv_contrib opencv_build
 
 
-# --- Stage 2: Build COLMAP using libraries from deps-builder ---
-FROM deps-builder AS colmap-builder
+# --- Stage 2: Build COLMAP using system libraries (before manual Eigen affects CMake find behavior) ---
+FROM ubuntu:24.04 AS colmap-builder
+
+ARG DEBIAN_FRONTEND=noninteractive
+
+# Install ALL base dependencies including system Ceres
+RUN apt-get update && \
+    apt-get install -y \
+        git \
+        cmake \
+        ninja-build \
+        build-essential \
+        libboost-program-options-dev \
+        libboost-graph-dev \
+        libboost-system-dev \
+        libeigen3-dev \
+        libopenimageio-dev \
+        openimageio-tools \
+        libmetis-dev \
+        libgoogle-glog-dev \
+        libgtest-dev \
+        libgmock-dev \
+        libsqlite3-dev \
+        libglew-dev \
+        qt6-base-dev \
+        libqt6opengl6-dev \
+        libqt6openglwidgets6 \
+        libceres-dev \
+        libcurl4-openssl-dev \
+        libssl-dev \
+        libmkl-full-dev && \
+    rm -rf /var/lib/apt/lists/*
+
+RUN mkdir -p /usr/include/opencv4
 
 ARG COLMAP_GIT_COMMIT=main
 RUN git clone https://github.com/colmap/colmap.git && \
@@ -147,19 +169,47 @@ RUN git clone https://github.com/colmap/colmap.git && \
     git checkout FETCH_HEAD && \
     mkdir build && \
     cd build && \
-    # Ensure CMake finds Ceres and Eigen from /usr/local (where we installed them in deps-builder)
+    # ONLY search in system paths for COLMAP, avoiding manually installed Eigen/Ceres
     cmake .. \
         -GNinja \
         -DCMAKE_BUILD_TYPE=Release \
         -DCMAKE_INSTALL_PREFIX=/colmap-install \
         -DBUILD_CUDA_TOOLS=OFF \
         -DBLA_VENDOR=Intel10_64lp \
-        -DCMAKE_PREFIX_PATH="/usr/local;/usr" && \
+        -DCMAKE_PREFIX_PATH="/usr;/usr/local;/opt;/opt/local" && \
+    # The default CMAKE_PREFIX_PATH usually includes /usr/local, so explicitly listing it shouldn't hurt
+    # The key is that Ceres from /usr/lib/x86_64-linux-gnu/cmake/Ceres/ should be found first
+    # and it should be linked against system Eigen
     ninja install
 
 
-# --- Stage 3: Build OpenMVS using libraries from deps-builder and COLMAP from colmap-builder ---
+# --- Stage 3: Build OpenMVS using manually installed libraries ---
 FROM deps-builder AS openmvs-builder
+
+# Install dependencies for building Ceres manually (must happen *after* deps-builder inherits)
+RUN apt-get update && \
+    apt-get install -y \
+        libgoogle-glog-dev \
+        libgflags-dev \
+        libatlas-base-dev \
+        libsuitesparse-dev && \
+    rm -rf /var/lib/apt/lists/*
+
+# 1. Build and install Ceres (linked against manually installed Eigen from deps-builder)
+RUN git clone https://github.com/ceres-solver/ceres-solver.git && \
+    cd ceres-solver && \
+    git checkout 2.2.0 && \
+    mkdir build && \
+    cd build && \
+    cmake .. \
+        -GNinja \
+        -DCMAKE_BUILD_TYPE=Release \
+        -DCMAKE_INSTALL_PREFIX=/usr/local \
+        -DBUILD_SHARED_LIBS=ON \
+        -DBUILD_TESTING=OFF \
+        -DBUILD_EXAMPLES=OFF && \
+    ninja && ninja install && \
+    cd ../.. && rm -rf ceres-solver
 
 # Copy COLMAP installation from colmap-builder stage
 COPY --from=colmap-builder /colmap-install /colmap-install
@@ -169,7 +219,7 @@ RUN git clone https://github.com/cdcseacave/VCG.git vcglib && \
     git clone https://github.com/cdcseacave/openMVS.git && \
     mkdir openMVS_build && \
     cd openMVS_build && \
-    # Ensure OpenMVS CMake finds Eigen/CGAL/OpenCV from /usr/local
+    # Ensure OpenMVS CMake finds Eigen/CGAL/OpenCV/Ceres from /usr/local
     cmake ../openMVS \
         -DCMAKE_BUILD_TYPE=Release \
         -DVCG_ROOT=/vcglib \
