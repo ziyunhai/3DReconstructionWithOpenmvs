@@ -1,0 +1,309 @@
+# --- Stage 1: Build COLMAP with CUDA support ---
+FROM nvidia/cuda:11.8-devel-ubuntu22.04 AS colmap-builder
+
+ENV DEBIAN_FRONTEND=noninteractive
+ENV PATH="/usr/local/cuda/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin" \
+    LD_LIBRARY_PATH="/usr/local/cuda/lib64:/usr/local/lib:/usr/lib:/lib:/lib64"
+
+RUN apt-get update && apt-get install -y \
+    git \
+    cmake \
+    ninja-build \
+    build-essential \
+    wget \
+    # COLMAP dependencies
+    libboost-all-dev \
+    libeigen3-dev \
+    libflann-dev \
+    libfreeimage-dev \
+    libmetis-dev \
+    libsqlite3-dev \
+    libglew-dev \
+    libqt5opengl5-dev \
+    libgoogle-glog-dev \
+    libgflags-dev \
+    libopencv-dev \
+    libceres-dev \
+    # Dependencies for PoseLib
+    && rm -rf /var/lib/apt/lists/*
+
+# Install PoseLib (dependency for COLMAP)
+RUN git clone https://github.com/PoseLib/PoseLib.git && \
+    cd PoseLib && \
+    mkdir build && \
+    cd build && \
+    cmake .. -DCMAKE_BUILD_TYPE=Release && \
+    make -j$(nproc) && \
+    make install && \
+    cd ../.. && \
+    rm -rf PoseLib
+
+ARG COLMAP_GIT_COMMIT=main
+RUN git clone https://github.com/colmap/colmap.git && \
+    cd colmap && \
+    git fetch https://github.com/colmap/colmap.git ${COLMAP_GIT_COMMIT} && \
+    git checkout FETCH_HEAD && \
+    mkdir build && \
+    cd build && \
+    cmake .. \
+        -GNinja \
+        -DCMAKE_BUILD_TYPE=Release \
+        -DCMAKE_INSTALL_PREFIX=/colmap-install \
+        -DBUILD_CUDA_TOOLS=ON \
+        -DBLA_VENDOR=Intel10_64lp \
+        -DPoseLib_DIR=/usr/local/lib/cmake/PoseLib && \
+    ninja install
+
+
+# --- Stage 2: Build OpenMVS with CUDA support ---
+FROM nvidia/cuda:11.8-devel-ubuntu22.04 AS openmvs-builder
+
+ENV DEBIAN_FRONTEND=noninteractive
+ENV PATH="/usr/local/cuda/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin" \
+    LD_LIBRARY_PATH="/usr/local/cuda/lib64:/usr/local/lib:/usr/lib:/lib:/lib64" \
+    CUDA_ARCHITECTURES="86" \
+    CUDA_TOOLKIT_ROOT_DIR=/usr/local/cuda \
+    OpenMVS_USE_CUDA=ON \
+    CMAKE_CUDA_ARCHITECTURES=86
+
+RUN apt-get update && apt-get install -y \
+    git \
+    cmake \
+    ninja-build \
+    build-essential \
+    wget \
+    unzip \
+    pkg-config \
+    # OpenMVS dependencies (matching CPU version requirements where possible)
+    libboost-program-options-dev \
+    libboost-graph-dev \
+    libboost-system-dev \
+    libeigen3-dev \
+    libopenimageio-dev \
+    openimageio-tools \
+    libmetis-dev \
+    libgoogle-glog-dev \
+    libgtest-dev \
+    libgmock-dev \
+    libsqlite3-dev \
+    libglew-dev \
+    qtbase5-dev \
+    libqt5opengl5-dev \
+    libboost-program-options-dev \
+    libboost-system-dev \
+    libboost-thread-dev \
+    libgmp-dev \
+    libmpfr-dev \
+    zlib1g-dev \
+    libceres-dev \
+    libcurl4-openssl-dev \
+    libssl-dev \
+    libmkl-full-dev \
+    libpng-dev \
+    libjpeg-dev \
+    libtiff-dev \
+    libglu1-mesa-dev \
+    libglew-dev \
+    libglfw3-dev \
+    libboost-iostreams-dev \
+    libboost-serialization-dev \
+    libopencv-dev \
+    libboost-thread-dev \
+    libgmp-dev \
+    libmpfr-dev \
+    zlib1g-dev \
+    python3-dev \
+    libnanoflann-dev \
+    libjxl-dev \
+    libjxl-tools \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install CGAL (header-only)
+RUN git clone https://github.com/CGAL/cgal.git --branch=v6.0.1 && \
+    cd cgal && \
+    mkdir build && \
+    cd build && \
+    cmake -DCMAKE_BUILD_TYPE=Release \
+          -DCGAL_HEADER_ONLY=ON \
+          -DCMAKE_CXX_FLAGS="-O3 -DNDEBUG" \
+          -DCMAKE_INSTALL_PREFIX=/usr/local \
+          -DWITH_CGAL_Qt5=OFF \
+          -DWITH_CGAL_ImageIO=ON \
+          -DWITH_CGAL_Core=ON \
+          .. && \
+    make -j$(nproc) && \
+    make install && \
+    cd ../.. && \
+    rm -rf cgal
+
+# Install Eigen
+RUN git clone https://gitlab.com/libeigen/eigen.git --branch 3.4 && \
+    mkdir eigen_build && \
+    cd eigen_build && \
+    cmake ../eigen \
+        -DCMAKE_BUILD_TYPE=Release \
+        -DCMAKE_INSTALL_PREFIX=/usr/local && \
+    make -j$(nproc) && make install && \
+    cd .. && rm -rf eigen_build eigen
+
+# Install OpenCV (with CUDA support)
+RUN wget -O opencv.zip https://github.com/opencv/opencv/archive/refs/tags/4.13.0.zip && \
+    wget -O opencv_contrib.zip https://github.com/opencv/opencv_contrib/archive/refs/tags/4.13.0.zip && \
+    unzip opencv.zip && \
+    unzip opencv_contrib.zip && \
+    mv opencv-4.13.0 opencv && \
+    mv opencv_contrib-4.13.0 opencv_contrib && \
+    rm opencv.zip opencv_contrib.zip
+
+RUN mkdir opencv_build && \
+    cd opencv_build && \
+    cmake ../opencv \
+        -DCMAKE_BUILD_TYPE=Release \
+        -DCMAKE_INSTALL_PREFIX=/usr/local \
+        -DOPENCV_EXTRA_MODULES_PATH=/opencv_contrib/modules \
+        -DBUILD_opencv_world=OFF \
+        -DBUILD_TESTS=OFF \
+        -DBUILD_PERF_TESTS=OFF \
+        -DBUILD_EXAMPLES=OFF \
+        -DBUILD_JAVA=OFF \
+        -DBUILD_opencv_python2=OFF \
+        -DBUILD_opencv_python3=ON \
+        -DWITH_JPEGXL=ON \
+        -DWITH_JPEG=ON \
+        -DWITH_PNG=ON \
+        -DWITH_TIFF=ON \
+        -DWITH_WEBP=ON \
+        -DWITH_OPENJPEG=ON \
+        -DWITH_OPENEXR=ON \
+        -DWITH_GTK=ON \
+        -DWITH_FFMPEG=ON \
+        -DWITH_GSTREAMER=OFF \
+        -DWITH_1394=OFF \
+        -DWITH_TBB=OFF \
+        -DWITH_OPENMP=ON \
+        -DWITH_EIGEN=ON \
+        -DWITH_V4L=ON \
+        -DWITH_LAPACK=ON \
+        -DWITH_QT=OFF \
+        -DWITH_CUDA=ON \
+        -DWITH_OPENCL=OFF \
+        -DWITH_IPP=OFF && \
+    make -j$(nproc) && \
+    make install && \
+    cd .. && \
+    rm -rf opencv opencv_contrib opencv_build
+
+# Install Ceres (linked against manually installed Eigen)
+RUN git clone https://github.com/ceres-solver/ceres-solver.git && \
+    cd ceres-solver && \
+    git checkout 2.2.0 && \
+    mkdir build && \
+    cd build && \
+    cmake .. \
+        -GNinja \
+        -DCMAKE_BUILD_TYPE=Release \
+        -DCMAKE_INSTALL_PREFIX=/usr/local \
+        -DBUILD_SHARED_LIBS=ON \
+        -DBUILD_TESTING=OFF \
+        -DBUILD_EXAMPLES=OFF && \
+    ninja && ninja install && \
+    cd ../.. && rm -rf ceres-solver
+
+# Install OpenMVS (with CUDA)
+ENV CGAL_DIR=/usr/local/lib/cmake/CGAL
+RUN git clone https://github.com/cdcseacave/VCG.git /opt/VCG && \
+    git clone https://github.com/cdcseacave/openMVS.git && \
+    mkdir openMVS_build && \
+    cd openMVS_build && \
+    cmake ../openMVS \
+        -DCMAKE_BUILD_TYPE=Release \
+        -DOpenMVS_USE_CUDA=ON \
+        -DVCG_ROOT=/opt/VCG \
+        -DVCG_DIR=/opt/VCG \
+        -DCGAL_DIR=/usr/local/lib/cmake/CGAL \
+        -DCMAKE_PREFIX_PATH="/usr/local;/usr" \
+        -DCMAKE_MODULE_PATH="/opt/VCG;/usr/local/lib/cmake;/usr/share/cmake" \
+        -DCMAKE_CXX_FLAGS="-I/usr/local/include -I/usr/include" \
+        -DCMAKE_CUDA_FLAGS="--expt-relaxed-constexpr" \
+        -DCUDA_TOOLKIT_ROOT_DIR=/usr/local/cuda \
+        -DCUDA_ENABLED=ON \
+        -DCMAKE_CUDA_ARCHITECTURES=86 \
+        -DCMAKE_CUDA_COMPILER=/usr/local/cuda/bin/nvcc \
+        -DCMAKE_INSTALL_PREFIX=/usr/local && \
+    make -j$(nproc) && make install && \
+    cd .. && rm -rf openMVS_build vcglib openMVS
+
+
+# --- Stage 3: Runtime Environment ---
+FROM nvidia/cuda:11.8-runtime-ubuntu22.04 AS runtime
+
+ENV DEBIAN_FRONTEND=noninteractive
+
+# Install runtime dependencies for both COLMAP and OpenMVS
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends --no-install-suggests \
+        libboost-program-options1.74.0 \
+        libc6 \
+        libomp5 \
+        libopengl0 \
+        libmetis5 \
+        libceres2.1 \
+        libopenimageio2.3 \
+        libgcc-s1 \
+        libgl1 \
+        libglew2.2 \
+        libgoogle-glog0v5 \
+        libqt5core5a \
+        libqt5gui5 \
+        libqt5widgets5 \
+        libqt5opengl5 \
+        libcurl4 \
+        libssl3 \
+        libmkl-locale \
+        libmkl-intel-lp64 \
+        libmkl-intel-thread \
+        libmkl-core \
+        libpng16-16 \
+        libjpeg-turbo8 \
+        libtiff6 \
+        libglu1-mesa \
+        libglfw3-3v1 \
+        libboost-iostreams1.74.0 \
+        libboost-program-options1.74.0 \
+        libboost-system1.74.0 \
+        libopencv-imgcodecs3.2 \
+        libboost-serialization1.74.0 \
+        libboost-thread1.74.0 \
+        libgmp10 \
+        libmpfr6 \
+        zlib1g \
+        ca-certificates \
+        libgtk-3-0 \
+        libavcodec58 \
+        libavformat58 \
+        libswscale5 \
+        libv4l-0 \
+        libxvidcore4 \
+        libx264-155 \
+        libopenexr25 \
+        libwebp7 \
+        libopenjp2-7 \
+        libjxl0.5 \
+        # CUDA runtime libraries are included in the base image
+        && apt-get clean && \
+    rm -rf /var/lib/apt/lists/*
+
+# Copy libraries and binaries from openmvs-builder
+COPY --from=openmvs-builder /usr/local/lib /usr/local/lib
+COPY --from=openmvs-builder /usr/local/bin /usr/local/bin
+# Copy COLMAP installation from colmap-builder
+COPY --from=colmap-builder /colmap-install/ /usr/local/
+
+# Update the dynamic linker cache to recognize new libraries
+RUN ldconfig
+
+# Set the working directory
+WORKDIR /workspace
+
+# Default command
+CMD ["/bin/bash"]
