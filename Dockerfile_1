@@ -1,118 +1,4 @@
-# --- Stage 1: Build and install dependencies that need manual compilation (Eigen, OpenCV, Ceres) ---
-FROM ubuntu:24.04 AS deps-builder
-
-ARG DEBIAN_FRONTEND=noninteractive
-
-RUN apt-get update && \
-    apt-get install -y \
-        git \
-        cmake \
-        ninja-build \
-        build-essential \
-        libboost-program-options-dev \
-        libboost-graph-dev \
-        libboost-system-dev \
-        libopenimageio-dev \
-        openimageio-tools \
-        libmetis-dev \
-        libgoogle-glog-dev \
-        libgtest-dev \
-        libgmock-dev \
-        libsqlite3-dev \
-        libglew-dev \
-        qt6-base-dev \
-        libqt6opengl6-dev \
-        libqt6openglwidgets6 \
-        libboost-program-options-dev \
-        libboost-system-dev \
-        libboost-thread-dev \
-        libgmp-dev \
-        libmpfr-dev \
-        zlib1g-dev \
-        libcurl4-openssl-dev \
-        libssl-dev \
-        libmkl-full-dev \
-        libpng-dev \
-        libjpeg-dev \
-        libtiff-dev \
-        libglu1-mesa-dev \
-        libglew-dev \
-        libglfw3-dev \
-        libboost-iostreams-dev \
-        libboost-serialization-dev \
-        libopencv-dev \
-        libboost-thread-dev \
-        libgmp-dev \
-        libmpfr-dev \
-        zlib1g-dev \
-        python3-dev \
-        libnanoflann-dev \
-        libjxl-dev \
-        libjxl-tools \
-        wget \
-        unzip \
-        pkg-config && \
-    rm -rf /var/lib/apt/lists/*
-
-RUN mkdir -p /usr/include/opencv4
-
-RUN git clone https://gitlab.com/libeigen/eigen.git --branch 3.4 && \
-    mkdir eigen_build && \
-    cd eigen_build && \
-    cmake ../eigen \
-        -DCMAKE_BUILD_TYPE=Release \
-        -DCMAKE_INSTALL_PREFIX=/usr/local && \
-    make -j$(nproc) && make install && \
-    cd .. && rm -rf eigen_build eigen
-
-RUN wget -O opencv.zip https://github.com/opencv/opencv/archive/refs/tags/4.13.0.zip && \
-    wget -O opencv_contrib.zip https://github.com/opencv/opencv_contrib/archive/refs/tags/4.13.0.zip && \
-    unzip opencv.zip && \
-    unzip opencv_contrib.zip && \
-    mv opencv-4.13.0 opencv && \
-    mv opencv_contrib-4.13.0 opencv_contrib && \
-    rm opencv.zip opencv_contrib.zip
-
-RUN mkdir opencv_build && \
-    cd opencv_build && \
-    cmake ../opencv \
-        -DCMAKE_BUILD_TYPE=Release \
-        -DCMAKE_INSTALL_PREFIX=/usr/local \
-        -DOPENCV_EXTRA_MODULES_PATH=/opencv_contrib/modules \
-        -DBUILD_opencv_world=OFF \
-        -DBUILD_TESTS=OFF \
-        -DBUILD_PERF_TESTS=OFF \
-        -DBUILD_EXAMPLES=OFF \
-        -DBUILD_JAVA=OFF \
-        -DBUILD_opencv_python2=OFF \
-        -DBUILD_opencv_python3=ON \
-        -DWITH_JPEGXL=ON \
-        -DWITH_JPEG=ON \
-        -DWITH_PNG=ON \
-        -DWITH_TIFF=ON \
-        -DWITH_WEBP=ON \
-        -DWITH_OPENJPEG=ON \
-        -DWITH_OPENEXR=ON \
-        -DWITH_GTK=ON \
-        -DWITH_FFMPEG=ON \
-        -DWITH_GSTREAMER=OFF \
-        -DWITH_1394=OFF \
-        -DWITH_TBB=OFF \
-        -DWITH_OPENMP=ON \
-        -DWITH_EIGEN=ON \
-        -DWITH_V4L=ON \
-        -DWITH_LAPACK=ON \
-        -DWITH_QT=OFF \
-        -DWITH_CUDA=OFF \
-        -DWITH_OPENCL=OFF \
-        -DWITH_IPP=OFF && \
-    make -j$(nproc) && \
-    make install && \
-    cd .. && \
-    rm -rf opencv opencv_contrib opencv_build
-
-
-# --- Stage 2: Build COLMAP using system libraries (including CGAL) ---
+# --- Stage 1: Build COLMAP using system libraries ---
 FROM ubuntu:24.04 AS colmap-builder
 
 ARG DEBIAN_FRONTEND=noninteractive
@@ -159,23 +45,134 @@ RUN git clone https://github.com/colmap/colmap.git && \
         -DCMAKE_BUILD_TYPE=Release \
         -DCMAKE_INSTALL_PREFIX=/colmap-install \
         -DBUILD_CUDA_TOOLS=OFF \
-        -DBLA_VENDOR=Intel10_64lp \
-        -DCMAKE_PREFIX_PATH="/usr;/usr/local;/opt;/opt/local" && \
+        -DBLA_VENDOR=Intel10_64lp && \
     ninja install
 
 
-# --- Stage 3: Build OpenMVS using manually installed libraries and system CGAL ---
-FROM deps-builder AS openmvs-builder
+# --- Stage 2: Build OpenMVS using manually compiled libraries ---
+FROM ubuntu:24.04 AS openmvs-builder
 
+ARG DEBIAN_FRONTEND=noninteractive
+
+# Install build tools and all dependencies for manual builds
 RUN apt-get update && \
     apt-get install -y \
+        git \
+        cmake \
+        ninja-build \
+        build-essential \
+        libboost-program-options-dev \
+        libboost-graph-dev \
+        libboost-system-dev \
+        libeigen3-dev \
+        libopenimageio-dev \
+        openimageio-tools \
+        libmetis-dev \
         libgoogle-glog-dev \
-        libgflags-dev \
-        libatlas-base-dev \
-        libsuitesparse-dev \
-        libcgal-dev && \
+        libgtest-dev \
+        libgmock-dev \
+        libsqlite3-dev \
+        libglew-dev \
+        qt6-base-dev \
+        libqt6opengl6-dev \
+        libqt6openglwidgets6 \
+        libboost-program-options-dev \
+        libboost-system-dev \
+        libboost-thread-dev \
+        libgmp-dev \
+        libmpfr-dev \
+        zlib1g-dev \
+        libcurl4-openssl-dev \
+        libssl-dev \
+        libmkl-full-dev \
+        libpng-dev \
+        libjpeg-dev \
+        libtiff-dev \
+        libglu1-mesa-dev \
+        libglew-dev \
+        libglfw3-dev \
+        libboost-iostreams-dev \
+        libboost-serialization-dev \
+        libopencv-dev \
+        libboost-thread-dev \
+        libgmp-dev \
+        libmpfr-dev \
+        zlib1g-dev \
+        python3-dev \
+        libnanoflann-dev \
+        libjxl-dev \
+        libjxl-tools \
+        wget \
+        unzip \
+        pkg-config && \
     rm -rf /var/lib/apt/lists/*
 
+RUN mkdir -p /usr/include/opencv4
+
+# Build and install Eigen
+RUN git clone https://gitlab.com/libeigen/eigen.git --branch 3.4 && \
+    mkdir eigen_build && \
+    cd eigen_build && \
+    cmake ../eigen \
+        -DCMAKE_BUILD_TYPE=Release \
+        -DCMAKE_INSTALL_PREFIX=/usr/local && \
+    make -j$(nproc) && make install && \
+    cd .. && rm -rf eigen_build eigen
+
+# Build and install CGAL (headers only)
+RUN git clone https://github.com/CGAL/cgal.git --branch=v6.0.1 && \
+    cd cgal && \
+    cp -r Installation/include/CGAL /usr/local/include/ && \
+    cd .. && rm -rf cgal
+
+# Build and install OpenCV
+RUN wget -O opencv.zip https://github.com/opencv/opencv/archive/refs/tags/4.13.0.zip && \
+    wget -O opencv_contrib.zip https://github.com/opencv/opencv_contrib/archive/refs/tags/4.13.0.zip && \
+    unzip opencv.zip && \
+    unzip opencv_contrib.zip && \
+    mv opencv-4.13.0 opencv && \
+    mv opencv_contrib-4.13.0 opencv_contrib && \
+    rm opencv.zip opencv_contrib.zip
+
+RUN mkdir opencv_build && \
+    cd opencv_build && \
+    cmake ../opencv \
+        -DCMAKE_BUILD_TYPE=Release \
+        -DCMAKE_INSTALL_PREFIX=/usr/local \
+        -DOPENCV_EXTRA_MODULES_PATH=/opencv_contrib/modules \
+        -DBUILD_opencv_world=OFF \
+        -DBUILD_TESTS=OFF \
+        -DBUILD_PERF_TESTS=OFF \
+        -DBUILD_EXAMPLES=OFF \
+        -DBUILD_JAVA=OFF \
+        -DBUILD_opencv_python2=OFF \
+        -DBUILD_opencv_python3=ON \
+        -DWITH_JPEGXL=ON \
+        -DWITH_JPEG=ON \
+        -DWITH_PNG=ON \
+        -DWITH_TIFF=ON \
+        -DWITH_WEBP=ON \
+        -DWITH_OPENJPEG=ON \
+        -DWITH_OPENEXR=ON \
+        -DWITH_GTK=ON \
+        -DWITH_FFMPEG=ON \
+        -DWITH_GSTREAMER=OFF \
+        -DWITH_1394=OFF \
+        -DWITH_TBB=OFF \
+        -DWITH_OPENMP=ON \
+        -DWITH_EIGEN=ON \
+        -DWITH_V4L=ON \
+        -DWITH_LAPACK=ON \
+        -DWITH_QT=OFF \
+        -DWITH_CUDA=OFF \
+        -DWITH_OPENCL=OFF \
+        -DWITH_IPP=OFF && \
+    make -j$(nproc) && \
+    make install && \
+    cd .. && \
+    rm -rf opencv opencv_contrib opencv_build
+
+# Build and install Ceres (linked against manually installed Eigen)
 RUN git clone https://github.com/ceres-solver/ceres-solver.git && \
     cd ceres-solver && \
     git checkout 2.2.0 && \
@@ -191,8 +188,7 @@ RUN git clone https://github.com/ceres-solver/ceres-solver.git && \
     ninja && ninja install && \
     cd ../.. && rm -rf ceres-solver
 
-COPY --from=colmap-builder /colmap-install /colmap-install
-
+# Build and install OpenMVS
 RUN git clone https://github.com/cdcseacave/VCG.git vcglib && \
     git clone https://github.com/cdcseacave/openMVS.git && \
     mkdir openMVS_build && \
@@ -207,11 +203,12 @@ RUN git clone https://github.com/cdcseacave/VCG.git vcglib && \
     cd .. && rm -rf openMVS_build vcglib openMVS
 
 
-# --- Stage 4: Runtime ---
+# --- Stage 3: Runtime with all dependencies and copied artifacts ---
 FROM ubuntu:24.04 AS runtime
 
 ARG DEBIAN_FRONTEND=noninteractive
 
+# Install ALL public runtime dependencies
 RUN apt-get update && \
     apt-get install -y --no-install-recommends --no-install-suggests \
         libboost-program-options1.83.0 \
@@ -219,6 +216,7 @@ RUN apt-get update && \
         libomp5 \
         libopengl0 \
         libmetis5 \
+        libceres4t64 \
         libopenimageio2.4t64 \
         libgcc-s1 \
         libgl1 \
@@ -263,12 +261,17 @@ RUN apt-get update && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/*
 
+# Copy libraries and binaries from openmvs-builder
 COPY --from=openmvs-builder /usr/local/lib /usr/local/lib
 COPY --from=openmvs-builder /usr/local/bin /usr/local/bin
-COPY --from=openmvs-builder /colmap-install/ /usr/local/
+# Copy COLMAP installation from colmap-builder
+COPY --from=colmap-builder /colmap-install/ /usr/local/
 
+# Update the dynamic linker cache to recognize new libraries
 RUN ldconfig
 
+# Set the working directory
 WORKDIR /workspace
 
+# Default command
 CMD ["/bin/bash"]
