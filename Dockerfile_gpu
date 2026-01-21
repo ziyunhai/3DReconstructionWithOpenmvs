@@ -5,25 +5,33 @@ ENV DEBIAN_FRONTEND=noninteractive
 ENV PATH="/usr/local/cuda/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin" \
     LD_LIBRARY_PATH="/usr/local/cuda/lib64:/usr/local/lib:/usr/lib:/lib:/lib64"
 
-RUN apt-get update && apt-get install -y \
-    git \
-    cmake \
-    ninja-build \
-    build-essential \
-    wget \
-    libboost-all-dev \
-    libeigen3-dev \
-    libflann-dev \
-    libfreeimage-dev \
-    libmetis-dev \
-    libsqlite3-dev \
-    libglew-dev \
-    libqt5opengl5-dev \
-    libgoogle-glog-dev \
-    libgflags-dev \
-    libopencv-dev \
-    libceres-dev \
-    && rm -rf /var/lib/apt/lists/*
+RUN apt-get update && \
+    apt-get install -y \
+        git \
+        cmake \
+        ninja-build \
+        build-essential \
+        libboost-program-options-dev \
+        libboost-graph-dev \
+        libboost-system-dev \
+        libeigen3-dev \
+        libopenimageio-dev \
+        openimageio-tools \
+        libmetis-dev \
+        libgoogle-glog-dev \
+        libgtest-dev \
+        libgmock-dev \
+        libsqlite3-dev \
+        libglew-dev \
+        qt6-base-dev \
+        libqt6opengl6-dev \
+        libqt6openglwidgets6 \
+        libceres-dev \
+        libcurl4-openssl-dev \
+        libssl-dev \
+        libmkl-full-dev \
+        libcgal-dev && \
+    rm -rf /var/lib/apt/lists/*
 
 RUN git clone https://github.com/PoseLib/PoseLib.git && \
     cd PoseLib && \
