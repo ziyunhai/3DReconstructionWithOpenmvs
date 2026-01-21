@@ -1,5 +1,5 @@
 # --- Stage 1: Build COLMAP with CUDA support ---
-FROM nvidia/cuda:11.8.0-devel-ubuntu22.04 AS colmap-builder
+FROM nvidia/cuda:11.8-devel-ubuntu24.04 AS colmap-builder
 
 ENV DEBIAN_FRONTEND=noninteractive
 ENV PATH="/usr/local/cuda/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin" \
@@ -11,6 +11,7 @@ RUN apt-get update && apt-get install -y \
     ninja-build \
     build-essential \
     wget \
+    # COLMAP dependencies
     libboost-all-dev \
     libeigen3-dev \
     libflann-dev \
@@ -23,6 +24,7 @@ RUN apt-get update && apt-get install -y \
     libgflags-dev \
     libopencv-dev \
     libceres-dev \
+    # Dependencies for PoseLib
     && rm -rf /var/lib/apt/lists/*
 
 # Install PoseLib (dependency for COLMAP)
@@ -54,7 +56,7 @@ RUN git clone https://github.com/colmap/colmap.git && \
 
 
 # --- Stage 2: Build OpenMVS with CUDA support ---
-FROM nvidia/cuda:11.8.0-devel-ubuntu22.04 AS openmvs-builder
+FROM nvidia/cuda:11.8-devel-ubuntu24.04 AS openmvs-builder
 
 ENV DEBIAN_FRONTEND=noninteractive
 ENV PATH="/usr/local/cuda/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin" \
@@ -72,6 +74,7 @@ RUN apt-get update && apt-get install -y \
     wget \
     unzip \
     pkg-config \
+    # OpenMVS dependencies (matching CPU version requirements where possible)
     libboost-program-options-dev \
     libboost-graph-dev \
     libboost-system-dev \
@@ -232,7 +235,7 @@ RUN git clone https://github.com/cdcseacave/VCG.git /opt/VCG && \
 
 
 # --- Stage 3: Runtime Environment ---
-FROM nvidia/cuda:11.8.0-devel-ubuntu22.04 AS runtime
+FROM nvidia/cuda:11.8-runtime-ubuntu24.04 AS runtime
 
 ENV DEBIAN_FRONTEND=noninteractive
 
@@ -286,6 +289,7 @@ RUN apt-get update && \
         libwebp7 \
         libopenjp2-7 \
         libjxl0.5 \
+        # CUDA runtime libraries are included in the base image
         && apt-get clean && \
     rm -rf /var/lib/apt/lists/*
 
