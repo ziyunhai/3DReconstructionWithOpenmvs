@@ -32,6 +32,8 @@ RUN apt-get update && \
         libmkl-full-dev \
         libcgal-dev && \
     rm -rf /var/lib/apt/lists/*
+	
+RUN mkdir -p /usr/include/opencv4
 
 RUN git clone https://github.com/PoseLib/PoseLib.git && \
     cd PoseLib && \
