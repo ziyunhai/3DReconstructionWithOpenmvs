@@ -72,6 +72,9 @@ ENV PATH="/usr/local/cuda/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:
     CUDA_TOOLKIT_ROOT_DIR=/usr/local/cuda \
     OpenMVS_USE_CUDA=ON \
     CMAKE_CUDA_ARCHITECTURES=86
+	
+ENV TMPDIR=/build-tmp
+RUN mkdir -p /build-tmp
 
 RUN apt-get update && apt-get install -y \
     git \
